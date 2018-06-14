@@ -19,19 +19,20 @@ $(document).ready(() => {
     });
 });
 
-class Issue {
+class Story {
     constructor(item) {
         const $item = $(item);
 
         this.key = $item.find('key').text();
+        this.key = $item.find('project').text();
         this.type = $item.find('type').text();
         this.status = $item.find('status').text();
         this.assignee = $item.find('assignee').text();
         this.summary = $item.find('summary').text();
         this.component = $item.find('component').text();
-        this.createdDate = $item.find('created').text();
-        this.dueDate = $item.find('due').text();
-        this.startDate = $item.find('customfield[id="customfield_12045"] > customfieldvalues > customfieldvalue').text();
+        this.createdDate = moment($item.find('created').text());
+        this.dueDate = moment($item.find('due').text());
+        this.startDate = moment($item.find('customfield[id="customfield_12045"] > customfieldvalues > customfieldvalue').text());
         this.link = $item.find('link').text();
     }
 }
@@ -50,7 +51,7 @@ class MyUrl {
         console.log("hostname: " + location.hostname);
 
         if (location.hostname.startsWith("localhost")) {
-            return "http://localhost:8080/public/xml/SearchRequest.xml";
+            return "http://localhost:8080/public/xml/search-result.xml";
         }
 
         return "http://mlm.lge.com/di/sr/jira.issueviews:searchrequest-xml/temp/SearchRequest.xml";
@@ -80,8 +81,8 @@ class MyUrl {
 
 class SearchResult {
     constructor(xmlDoc) {
-        this.issue = {};
-        this.items = [];
+        this._issue = {};
+        this._stories = [];
 
         this._parseXmlDoc(xmlDoc);
     }
@@ -94,14 +95,14 @@ class SearchResult {
     }
 
     _parseIssueCount(issueNode) {
-        this.issue.total = issueNode.attr("total");
-        this.issue.start = issueNode.attr("start");
-        this.issue.end = issueNode.attr("end");
+        this._issue.total = issueNode.attr("total");
+        this._issue.start = issueNode.attr("start");
+        this._issue.end = issueNode.attr("end");
     }
 
     _parseItems(xmlitems) {
         xmlitems.each((index, value) => {
-            this.items.push(new Issue(value));
+            this._stories.push(new Story(value));
         });
 
         //console.log(JSON.stringify(this.items));
@@ -118,8 +119,44 @@ class SearchResult {
     }
 
     // return arrays of Issue
-    issues(option) {
-        return this.items;
+    stories() {
+        return this._stories;
+    }
+
+    issue() {
+        return this._issue;
+    }
+}
+
+class UserStat {
+    constructor(name, stories) {
+        this.name = name;
+        
+        this.projectStats = new Map();
+        _(stories).chain().groupBy(s => s.project)
+                        .map((group, key) => {
+                            const groupByStatus = _(group).chain().groupBy(s => s.status)
+                                                                .value();                            
+                            _.forIn(groupByStatus, (v, k) => 
+                                this.projectStats.set(k, v.length));
+                        }).value();                        
+        this.storiesInterested = _(stories).chain()
+                                        .filter(s => this._interestedDates(s.dueDate, s.startDate))
+                                        .value();
+
+        console.log(JSON.stringify(this.storiesInterested));
+        console.log(this.projectStats);
+    }
+
+    _interestedDates(...dates) {
+        const prevWeek = moment().startOf('week').subtract(1, 'weeks');
+        const nextWeek = moment().endOf('week').add(1, 'weeks');
+
+        const betweens = _(dates).chain()
+                                .filter(date => !isNaN(date) && date.isBetween(prevWeek, nextWeek, null, '[]'))
+                                .value();
+
+        return betweens.length > 0;
     }
 }
 
@@ -134,19 +171,23 @@ function main() {
             addLinks("projects", result.projects(), onProjectClick);
             addLinks("components", result.components(), onComponentClick);
 
+            return _(result.stories()).chain()
+                    .groupBy(story => story.assignee)
+                    .map((stories, key) => {
+                        return new UserStat(key, stories)
+                    })
+                    .value();
             //return [{name: 'lee', project: [{name: 'thinq', stories: 10, my_story: 2}, {}]}]
             // todo : convert xmldoc -> assignee array
         })
-        .then(result => {            
-            const issues = result.issues({
-                project: "all"
-            });
+        .then(userStatArray => {            
+            //const issues = result.stories();
 
-            console.log(JSON.stringify(issues));
+            console.log(JSON.stringify(userStatArray));
 
             //$('#issues').text(`start: ${result.issue.start}, end: ${result.issue.end}, total: ${result.issue.total}`);
 
-            drawChart(issues);
+            //drawChart(issues);
         });
 }
 

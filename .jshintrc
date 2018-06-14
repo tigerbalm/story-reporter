@@ -4,6 +4,9 @@
         "console": false,
         "google": false,
         "document": false,
-        "$": false
+        "location": false,
+        "$": false,
+        "_": false,
+        "moment": false
     }
 }
