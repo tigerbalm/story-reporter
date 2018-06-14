@@ -1,47 +1,110 @@
-google.charts.load('current', {'packages':['timeline']});
-google.charts.setOnLoadCallback(onGoogleLoadCallback);
+'use strict';
 
-function onGoogleLoadCallback() {
+google.charts.load('current', {
+    'packages': ['timeline']
+});
+google.charts.setOnLoadCallback(() => {
     console.log("google chart loaded");
-    drawChart();
-}
-
-$(document).ready(() => {
-    'use strict';
-    
-    console.log("doc ready");
 
     main();
+});
 
-    console.log("after main");
+$(document).ready(() => {
+    console.log("jquery doc ready");
+
+    $.ajaxSetup({
+        xhrFields: {
+            withCredentials: true
+        }
+    });
 });
 
 class Issue {
-    constructor(key, type, status, assignee, summary, component, createdDate, dueDate, startDate, link) {
-        this.key = key;
-        this.type = type;
-        this.status = status;
-        this.assignee = assignee;
-        this.summary = summary;
-        this.component = component;
-        this.createdDate = createdDate;
-        this.dueDate = dueDate;
-        this.startDate = startDate;
-        this.link = link;
+    constructor(item) {
+        const $item = $(item);
+
+        this.key = $item.find('key').text();
+        this.type = $item.find('type').text();
+        this.status = $item.find('status').text();
+        this.assignee = $item.find('assignee').text();
+        this.summary = $item.find('summary').text();
+        this.component = $item.find('component').text();
+        this.createdDate = $item.find('created').text();
+        this.dueDate = $item.find('due').text();
+        this.startDate = $item.find('customfield[id="customfield_12045"] > customfieldvalues > customfieldvalue').text();
+        this.link = $item.find('link').text();
     }
 }
 
-class MyUrl {    
-}
+class MyUrl {
+    constructor() {
+        this.baseUrl = this._baseUrl();
+        this.jqlQuery = this._buildJql();
+        this.preferredFields = this._buildFields();
+        this.searchUrl = this._buildSearchUrl();
 
-class SearchResult {    
-    constructor(url) {
-        this.url = url;
+        console.log("searchUrl: " + this.searchUrl);
     }
 
-    // return promise
-    fetchAndParse() {
-        return $.get(url.encodedUrl);
+    _baseUrl() {
+        console.log("hostname: " + location.hostname);
+
+        if (location.hostname.startsWith("localhost")) {
+            return "http://localhost:8080/public/xml/SearchRequest.xml";
+        }
+
+        return "http://mlm.lge.com/di/sr/jira.issueviews:searchrequest-xml/temp/SearchRequest.xml";
+    }
+
+    _buildJql() {
+        return "project=LIFETRACK AND issuetype=Story";
+    }
+
+    _buildFields() {
+        const fields = ['summary', 'link', 'assignee', 'status', 'component', 'due', "created",
+            'type', "customfields", "resolved", "customfield_12045", "customfieldvalues"
+        ];
+
+        return fields.map(item => "field=" + item).join("&");
+    }
+
+    _buildSearchUrl() {
+        const params = {
+            jqlQuery: this.jqlQuery,
+            tempMax: 10
+        };
+
+        return this.baseUrl + "?" + $.param(params) + "&" + this.preferredFields;
+    }
+}
+
+class SearchResult {
+    constructor(xmlDoc) {
+        this.issue = {};
+        this.items = [];
+
+        this._parseXmlDoc(xmlDoc);
+    }
+
+    _parseXmlDoc(xml) {
+        const $xml = $(xml);
+
+        this._parseIssueCount($xml.find("issue"));
+        this._parseItems($xml.find("item"));
+    }
+
+    _parseIssueCount(issueNode) {
+        this.issue.total = issueNode.attr("total");
+        this.issue.start = issueNode.attr("start");
+        this.issue.end = issueNode.attr("end");
+    }
+
+    _parseItems(xmlitems) {
+        xmlitems.each((index, value) => {
+            this.items.push(new Issue(value));
+        });
+
+        //console.log(JSON.stringify(this.items));
     }
 
     // returns unique projects list
@@ -56,63 +119,104 @@ class SearchResult {
 
     // return arrays of Issue
     issues(option) {
-        return [new Issue("THNQNATIVE-181", "Bug", "Open", 
-        "&#44608;&#51068;&#50689; ilyoung.kim", "Model Json&#50640; &#45824;&#54620; &#48516;&#49437;", 
-        "SmartThinQ H&amp;A Service", "Tue, 5 Jun 2018 18:16:35 +0900", "Fri, 27 Jul 2018 00:00:00 +0900", 
-        "Mon, 23 Jul 2018 00:00:00 +0900", "http://mlm.lge.com/di/browse/THNQNATIVE-181")];
+        return this.items;
     }
 }
 
 function main() {
     generateHtml();
 
-    const url = new MyUrl();
-    const searchResult = new SearchResult(url);
-    const projects = searchResult.projects();    
-    const issues = searchResult.issues({project: "all"});
-
-    console.log(JSON.stringify(issues));
+    const url = new MyUrl(); 
     
-    addLinks("projects", projects, project => {
-        // refresh all with project
-        console.log(`Project "${project}" is selected.`);
-    });
+    $.get(url.searchUrl, 'xml')
+        .then(xmlDoc => new SearchResult(xmlDoc))
+        .then(result => {
+            addLinks("projects", result.projects(), onProjectClick);
+            addLinks("components", result.components(), onComponentClick);
 
-    addLinks("components", searchResult.components(), comp => {
-        // refresh all with project
-        console.log(`Component "${comp}" is selected.`);
-    });
-    
-    drawChart("progress_barchart", issues);
+            //return [{name: 'lee', project: [{name: 'thinq', stories: 10, my_story: 2}, {}]}]
+            // todo : convert xmldoc -> assignee array
+        })
+        .then(result => {            
+            const issues = result.issues({
+                project: "all"
+            });
+
+            console.log(JSON.stringify(issues));
+
+            //$('#issues').text(`start: ${result.issue.start}, end: ${result.issue.end}, total: ${result.issue.total}`);
+
+            drawChart(issues);
+        });
+}
+
+function onProjectClick(project) {
+    // refresh all with project
+    console.log(`Project "${project}" is selected.`);
+}
+
+function onComponentClick(comp) {
+    // refresh all with project
+    console.log(`Component "${comp}" is selected.`);
 }
 
 function generateHtml() {
-    var html = "<div id='projects'>projects div</div>" +
-        "<div id='components'>component div</div>" +
-        "<div id='progress_barchart'>progress_barchart</div>" +
-        "<div id='calendar_chart'>calendar_chart</div>" +
-        "<div id='timeline'></div>";
+    var html = `
+        <div id='projects'>projects div</div>
+        <div id='components'>component div</div>
+        <div id='issues'></div>
+        <div id='peopel_table'>
+            <table align="center" id="people_table">
+            <tr>
+                <th> Name </th>
+                <th> Work </th>
+            </tr>
+          </table>
+        </div>
+        `;        
 
     $("#myCanvas").html(html);
 }
 
 function addLinks(id, items, onClick) {
-    const text = items.map(item => `${item}`).join(" | ");
-    $(`#${id}`).text(text);
+    const html = items.map(item => `<span onclick='${onClick.name}("${item}")'>${item}</span>`).join(" | ");
+    $(`#${id}`).html(html);
 }
 
-function drawChart(id, issues) {
+function drawChart(issues) {
+    // issues.forEach((item, id) => {
+    //     $('#people_table').append(`
+    //         <tr>
+    //             <td>${item.assignee}</td>
+    //             <td>
+    //                 <table id='${item.key}'>                        
+    //                 </table>
+    //             </td>
+    //         </tr>
+    //     `);
+    // });
+
     var container = document.getElementById('timeline');
     var chart = new google.visualization.Timeline(container);
     var dataTable = new google.visualization.DataTable();
 
-    dataTable.addColumn({ type: 'string', id: 'President' });
-    dataTable.addColumn({ type: 'date', id: 'Start' });
-    dataTable.addColumn({ type: 'date', id: 'End' });
+    dataTable.addColumn({
+        type: 'string',
+        id: 'President'
+    });
+    dataTable.addColumn({
+        type: 'date',
+        id: 'Start'
+    });
+    dataTable.addColumn({
+        type: 'date',
+        id: 'End'
+    });
     dataTable.addRows([
-    [ 'Washington', new Date(1789, 3, 30), new Date(1797, 2, 4) ],
-    [ 'Adams',      new Date(1797, 2, 4),  new Date(1801, 2, 4) ],
-    [ 'Jefferson',  new Date(1801, 2, 4),  new Date(1809, 2, 4) ]]);
+        ['Washington', new Date(1789, 3, 30), new Date(1797, 2, 4)],
+        ['Adams', new Date(1797, 2, 4), new Date(1801, 2, 4)],
+        ['Jefferson', new Date(1801, 2, 4), new Date(1809, 2, 4)]
+    ]);
 
     chart.draw(dataTable);
 }

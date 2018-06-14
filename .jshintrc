@@ -1,6 +1,9 @@
 {
     "esversion": 6,
     "globals": {
-        "console": false
+        "console": false,
+        "google": false,
+        "document": false,
+        "$": false
     }
 }
