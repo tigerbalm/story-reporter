@@ -5,23 +5,22 @@
 // 3. ui 작업하기
 // 4. webpack 으로 js 파일 분리하기
 
-AJS.toInit(function($) {
-    google.charts.load('current', {
-        'packages': ['timeline', 'corechart']
-    });
-    
-    google.charts.setOnLoadCallback(() => {
-        console.log("google chart loaded");
-        
-        $.ajaxSetup({
-            xhrFields: {
-                withCredentials: true
-            }
-        });
-    
-        main();
-    });
+google.charts.load('current', {
+    'packages': ['timeline', 'corechart']
 });
+
+google.charts.setOnLoadCallback(() => {
+    console.log("google chart loaded");
+
+    $.ajaxSetup({
+        xhrFields: {
+            withCredentials: true
+        }
+    });
+
+    main();
+});
+
 
 class Story {
     constructor(item) {
@@ -163,10 +162,15 @@ class UserStat {
         const nextWeek = moment().endOf('week').add(1, 'weeks');
 
         const betweens = _(dates).chain()
-            .filter(d => !isNaN(d) && d.isBetween(prevWeek, nextWeek, null, '[]'))
+            .filter(d => !isNaN(d) && this._isBetween(d, prevWeek, nextWeek))
             .value();
 
         return betweens.length > 0;
+    }
+
+    _isBetween(target, left, right) {
+        return (target.isSame(left) || target.isAfter(left)) &&
+            (target.isSame(right) || target.isBefore(right));
     }
 }
 
@@ -180,7 +184,7 @@ function main() {
     $.get(url.searchUrl, 'xml')
         .then(xmlDoc => {
             const result = new SearchResult(xmlDoc);
-            
+
             addLinks("projects", result.projects(), onProjectClick);
             addLinks("components", result.components(), onComponentClick);
 
@@ -191,67 +195,67 @@ function main() {
                 })
                 .value();
 
-                _(userStatArray).map(user => {
-                    return {
-                        name: user.name,
-                        table: genTable(user)
-                    };
-                }).map(pair => {
-                    console.log("pair.table: " + pair.table);
-    
-                    $('#people_table > tbody:first').append(`
+            _(userStatArray).map(user => {
+                return {
+                    name: user.name,
+                    table: genTable(user)
+                };
+            }).map(pair => {
+                console.log("pair.table: " + pair.table);
+
+                $('#people_table > tbody:first').append(`
                         <tr>
                             <td>${pair.name}</td>
                             <td>${pair.table}</td>
                         </tr>
                     `);
-                }).value();
-    
-                //drawChart(issues);
-                _(userStatArray).map(user => {
-                    user.projectStats.forEach((v, k) => showPieChart(`${user.key}_${k}`, k, v));
-                    showTimelineChart(`timeline_${user.key}`, user.storiesInterested);
-                }).value();
+            }).value();
+
+            //drawChart(issues);
+            _(userStatArray).map(user => {
+                user.projectStats.forEach((v, k) => showPieChart(`${user.key}_${k}`, k, v));
+                showTimelineChart(`timeline_${user.key}`, user.storiesInterested);
+            }).value();
 
         });
-        // .then(result => {
-        //     addLinks("projects", result.projects(), onProjectClick);
-        //     addLinks("components", result.components(), onComponentClick);
+    // .then(result => {
+    //     addLinks("projects", result.projects(), onProjectClick);
+    //     addLinks("components", result.components(), onComponentClick);
 
-        //     return _(result.stories()).chain()
-        //         .groupBy(story => story.assignee)
-        //         .map((stories, key) => {
-        //             return new UserStat(key, stories)
-        //         })
-        //         .value();
-        // })
-        // .then(userStatArray => {
-        //     //const issues = result.stories();
+    //     return _(result.stories()).chain()
+    //         .groupBy(story => story.assignee)
+    //         .map((stories, key) => {
+    //             return new UserStat(key, stories)
+    //         })
+    //         .value();
+    // })
+    // .then(userStatArray => {
+    //     //const issues = result.stories();
 
-        //     console.log(JSON.stringify(userStatArray));
+    //     console.log(JSON.stringify(userStatArray));
 
-        //     _(userStatArray).map(user => {
-        //         return {
-        //             name: user.name,
-        //             table: genTable(user)
-        //         };
-        //     }).map(pair => {
-        //         console.log("pair.table: " + pair.table);
+    //     _(userStatArray).map(user => {
+    //         return {
+    //             name: user.name,
+    //             table: genTable(user)
+    //         };
+    //     }).map(pair => {
+    //         console.log("pair.table: " + pair.table);
 
-        //         $('#people_table > tbody:first').append(`
-        //             <tr>
-        //                 <td>${pair.name}</td>
-        //                 <td>${pair.table}</td>
-        //             </tr>
-        //         `);
-        //     }).value();
+    //         $('#people_table > tbody:first').append(`
+    //             <tr>
+    //                 <td>${pair.name}</td>
+    //                 <td>${pair.table}</td>
+    //             </tr>
+    //         `);
+    //     }).value();
 
-        //     //drawChart(issues);
-        //     _(userStatArray).map(user => {
-        //         user.projectStats.forEach((v, k) => showPieChart(`${user.key}_${k}`, k, v));
-        //         showTimelineChart(`timeline_${user.key}`, user.storiesInterested);
-        //     }).value();
-        // });
+    //     //drawChart(issues);
+    //     _(userStatArray).map(user => {
+    //         user.projectStats.forEach((v, k) => showPieChart(`${user.key}_${k}`, k, v));
+    //         showTimelineChart(`timeline_${user.key}`, user.storiesInterested);
+    //     }).value();
+    // });
 }
 
 function showTimelineChart(id, storyArray) {
@@ -259,16 +263,29 @@ function showTimelineChart(id, storyArray) {
     var chart = new google.visualization.Timeline(container);
     var dataTable = new google.visualization.DataTable();
 
-    dataTable.addColumn({ type: 'string', id: 'Summary' });
-    dataTable.addColumn({ type: 'date', id: 'Start' });
-    dataTable.addColumn({ type: 'date', id: 'Due' });
+    dataTable.addColumn({
+        type: 'string',
+        id: 'Summary'
+    });
+    dataTable.addColumn({
+        type: 'date',
+        id: 'Start'
+    });
+    dataTable.addColumn({
+        type: 'date',
+        id: 'Due'
+    });
 
     const rows = _(storyArray).map(story => {
         console.log("story.summary: " + story.summary);
         console.log("startDate:" + story.startDate.toDate());
         console.log("dueDate:" + story.dueDate.toDate());
 
-        return [story.summary, story.startDate.toDate(), story.dueDate.toDate()];
+        //const start = new Date(story.startDate.year(), story.startDate.month(), story.startDate.date(), 0, 1, 0);
+        //const end = new Date(story.dueDate.year(), story.dueDate.month(), story.dueDate.date(), 0, 1, 2);
+        var start = new Date(2018, 10, 11);
+        var end = new Date(2018, 10, 14);
+        return ["story.summary", start, end];
     }).value();
 
     dataTable.addRows(rows);
@@ -277,8 +294,8 @@ function showTimelineChart(id, storyArray) {
         hAxis: {
             minValue: moment().startOf('week').subtract(1, 'weeks').toDate(),
             maxValue: moment().endOf('week').add(1, 'weeks').toDate()
-          }
-      };
+        }
+    };
 
     chart.draw(dataTable, options);
 }
