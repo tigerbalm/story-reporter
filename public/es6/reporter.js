@@ -1,21 +1,25 @@
-'use strict';
+// todo
+// 0. query 시간 정보 추가하기
+// 1. project 정보 가져오기
+// 2. jpl query field 만들기
+// 3. ui 작업하기
+// 4. webpack 으로 js 파일 분리하기
 
-google.charts.load('current', {
-    'packages': ['timeline']
-});
-google.charts.setOnLoadCallback(() => {
-    console.log("google chart loaded");
-
-    main();
-});
-
-$(document).ready(() => {
-    console.log("jquery doc ready");
-
-    $.ajaxSetup({
-        xhrFields: {
-            withCredentials: true
-        }
+AJS.toInit(function($) {
+    google.charts.load('current', {
+        'packages': ['timeline', 'corechart']
+    });
+    
+    google.charts.setOnLoadCallback(() => {
+        console.log("google chart loaded");
+        
+        $.ajaxSetup({
+            xhrFields: {
+                withCredentials: true
+            }
+        });
+    
+        main();
     });
 });
 
@@ -24,7 +28,8 @@ class Story {
         const $item = $(item);
 
         this.key = $item.find('key').text();
-        this.key = $item.find('project').text();
+        this.proejctKey = $item.find('project').attr('key');
+        this.proejctName = $item.find('project').text();
         this.type = $item.find('type').text();
         this.status = $item.find('status').text();
         this.assignee = $item.find('assignee').text();
@@ -58,11 +63,11 @@ class MyUrl {
     }
 
     _buildJql() {
-        return "project=LIFETRACK AND issuetype=Story";
+        return "project in (LIFETRACK, THNQNATIVE) AND issuetype=Story";
     }
 
     _buildFields() {
-        const fields = ['summary', 'link', 'assignee', 'status', 'component', 'due', "created",
+        const fields = ['project', 'summary', 'link', 'assignee', 'status', 'component', 'due', "created",
             'type', "customfields", "resolved", "customfield_12045", "customfieldvalues"
         ];
 
@@ -131,18 +136,23 @@ class SearchResult {
 class UserStat {
     constructor(name, stories) {
         this.name = name;
-        
+        this.key = name.replace(/[^A-Za-z]/g, "");
+
         this.projectStats = new Map();
-        _(stories).chain().groupBy(s => s.project)
-                        .map((group, key) => {
-                            const groupByStatus = _(group).chain().groupBy(s => s.status)
-                                                                .value();                            
-                            _.forIn(groupByStatus, (v, k) => 
-                                this.projectStats.set(k, v.length));
-                        }).value();                        
+        _(stories).chain().groupBy(s => s.proejctKey)
+            .map((group, key) => {
+                const groupByStatus = _(group).chain().groupBy(s => s.status)
+                    .value();
+                const statusMap = new Map();
+
+                _.forIn(groupByStatus, (v, k) =>
+                    statusMap.set(k, v.length));
+
+                this.projectStats.set(key, statusMap);
+            }).value();
         this.storiesInterested = _(stories).chain()
-                                        .filter(s => this._interestedDates(s.dueDate, s.startDate))
-                                        .value();
+            .filter(s => this._interestedDates(s.dueDate, s.startDate))
+            .value();
 
         console.log(JSON.stringify(this.storiesInterested));
         console.log(this.projectStats);
@@ -153,42 +163,162 @@ class UserStat {
         const nextWeek = moment().endOf('week').add(1, 'weeks');
 
         const betweens = _(dates).chain()
-                                .filter(date => !isNaN(date) && date.isBetween(prevWeek, nextWeek, null, '[]'))
-                                .value();
+            .filter(d => !isNaN(d) && d.isBetween(prevWeek, nextWeek, null, '[]'))
+            .value();
 
         return betweens.length > 0;
     }
 }
 
 function main() {
+    'use strict';
+
     generateHtml();
 
-    const url = new MyUrl(); 
-    
+    const url = new MyUrl();
+
     $.get(url.searchUrl, 'xml')
-        .then(xmlDoc => new SearchResult(xmlDoc))
-        .then(result => {
+        .then(xmlDoc => {
+            const result = new SearchResult(xmlDoc);
+            
             addLinks("projects", result.projects(), onProjectClick);
             addLinks("components", result.components(), onComponentClick);
 
-            return _(result.stories()).chain()
-                    .groupBy(story => story.assignee)
-                    .map((stories, key) => {
-                        return new UserStat(key, stories)
-                    })
-                    .value();
-            //return [{name: 'lee', project: [{name: 'thinq', stories: 10, my_story: 2}, {}]}]
-            // todo : convert xmldoc -> assignee array
-        })
-        .then(userStatArray => {            
-            //const issues = result.stories();
+            const userStatArray = _(result.stories()).chain()
+                .groupBy(story => story.assignee)
+                .map((stories, key) => {
+                    return new UserStat(key, stories)
+                })
+                .value();
 
-            console.log(JSON.stringify(userStatArray));
+                _(userStatArray).map(user => {
+                    return {
+                        name: user.name,
+                        table: genTable(user)
+                    };
+                }).map(pair => {
+                    console.log("pair.table: " + pair.table);
+    
+                    $('#people_table > tbody:first').append(`
+                        <tr>
+                            <td>${pair.name}</td>
+                            <td>${pair.table}</td>
+                        </tr>
+                    `);
+                }).value();
+    
+                //drawChart(issues);
+                _(userStatArray).map(user => {
+                    user.projectStats.forEach((v, k) => showPieChart(`${user.key}_${k}`, k, v));
+                    showTimelineChart(`timeline_${user.key}`, user.storiesInterested);
+                }).value();
 
-            //$('#issues').text(`start: ${result.issue.start}, end: ${result.issue.end}, total: ${result.issue.total}`);
-
-            //drawChart(issues);
         });
+        // .then(result => {
+        //     addLinks("projects", result.projects(), onProjectClick);
+        //     addLinks("components", result.components(), onComponentClick);
+
+        //     return _(result.stories()).chain()
+        //         .groupBy(story => story.assignee)
+        //         .map((stories, key) => {
+        //             return new UserStat(key, stories)
+        //         })
+        //         .value();
+        // })
+        // .then(userStatArray => {
+        //     //const issues = result.stories();
+
+        //     console.log(JSON.stringify(userStatArray));
+
+        //     _(userStatArray).map(user => {
+        //         return {
+        //             name: user.name,
+        //             table: genTable(user)
+        //         };
+        //     }).map(pair => {
+        //         console.log("pair.table: " + pair.table);
+
+        //         $('#people_table > tbody:first').append(`
+        //             <tr>
+        //                 <td>${pair.name}</td>
+        //                 <td>${pair.table}</td>
+        //             </tr>
+        //         `);
+        //     }).value();
+
+        //     //drawChart(issues);
+        //     _(userStatArray).map(user => {
+        //         user.projectStats.forEach((v, k) => showPieChart(`${user.key}_${k}`, k, v));
+        //         showTimelineChart(`timeline_${user.key}`, user.storiesInterested);
+        //     }).value();
+        // });
+}
+
+function showTimelineChart(id, storyArray) {
+    var container = document.getElementById(id);
+    var chart = new google.visualization.Timeline(container);
+    var dataTable = new google.visualization.DataTable();
+
+    dataTable.addColumn({ type: 'string', id: 'Summary' });
+    dataTable.addColumn({ type: 'date', id: 'Start' });
+    dataTable.addColumn({ type: 'date', id: 'Due' });
+
+    const rows = _(storyArray).map(story => {
+        console.log("story.summary: " + story.summary);
+        console.log("startDate:" + story.startDate.toDate());
+        console.log("dueDate:" + story.dueDate.toDate());
+
+        return [story.summary, story.startDate.toDate(), story.dueDate.toDate()];
+    }).value();
+
+    dataTable.addRows(rows);
+
+    var options = {
+        hAxis: {
+            minValue: moment().startOf('week').subtract(1, 'weeks').toDate(),
+            maxValue: moment().endOf('week').add(1, 'weeks').toDate()
+          }
+      };
+
+    chart.draw(dataTable, options);
+}
+
+function showPieChart(id, projectKey, statusMap) {
+    let dataArr = [
+        ['Status', 'Story']
+    ];
+
+    statusMap.forEach((v, k) => dataArr.push([k, v]));
+
+    dataArr.push(['Total', 20]);
+
+    const data = google.visualization.arrayToDataTable(dataArr);
+
+    var options = {
+        title: projectKey
+    };
+
+    var chart = new google.visualization.PieChart(document.getElementById(id));
+
+    chart.draw(data, options);
+}
+
+function genTable(user) {
+    const prjCount = user.projectStats.size;
+    let prjTds = "";
+    user.projectStats.forEach((v, k) => prjTds += `<td height='300' id='${user.key}_${k}'>${k} - ${v}</td>`);
+
+    console.log("prjTds: " + prjTds);
+
+    return `<table id='worktable_${user.key}'>                
+                <tr>                    
+                    ${prjTds}
+                </tr>
+                <tr>
+                    <td height='300' colspan='${prjCount}' id='timeline_${user.key}'></td>
+                </tr>
+            </table>
+            `;
 }
 
 function onProjectClick(project) {
@@ -206,15 +336,17 @@ function generateHtml() {
         <div id='projects'>projects div</div>
         <div id='components'>component div</div>
         <div id='issues'></div>
-        <div id='peopel_table'>
-            <table align="center" id="people_table">
-            <tr>
-                <th> Name </th>
-                <th> Work </th>
-            </tr>
-          </table>
+        <div id='people_div'>
+            <table id='people_table'>
+                <tbody id='first'>
+                <tr>
+                    <th> name </th>
+                    <th> work </th>
+                </tr>
+                </tbody>
+            </table>
         </div>
-        `;        
+        `;
 
     $("#myCanvas").html(html);
 }
@@ -222,42 +354,4 @@ function generateHtml() {
 function addLinks(id, items, onClick) {
     const html = items.map(item => `<span onclick='${onClick.name}("${item}")'>${item}</span>`).join(" | ");
     $(`#${id}`).html(html);
-}
-
-function drawChart(issues) {
-    // issues.forEach((item, id) => {
-    //     $('#people_table').append(`
-    //         <tr>
-    //             <td>${item.assignee}</td>
-    //             <td>
-    //                 <table id='${item.key}'>                        
-    //                 </table>
-    //             </td>
-    //         </tr>
-    //     `);
-    // });
-
-    var container = document.getElementById('timeline');
-    var chart = new google.visualization.Timeline(container);
-    var dataTable = new google.visualization.DataTable();
-
-    dataTable.addColumn({
-        type: 'string',
-        id: 'President'
-    });
-    dataTable.addColumn({
-        type: 'date',
-        id: 'Start'
-    });
-    dataTable.addColumn({
-        type: 'date',
-        id: 'End'
-    });
-    dataTable.addRows([
-        ['Washington', new Date(1789, 3, 30), new Date(1797, 2, 4)],
-        ['Adams', new Date(1797, 2, 4), new Date(1801, 2, 4)],
-        ['Jefferson', new Date(1801, 2, 4), new Date(1809, 2, 4)]
-    ]);
-
-    chart.draw(dataTable);
 }
