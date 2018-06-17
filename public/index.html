@@ -2,9 +2,7 @@
 <html>
 
 <head>
-  <script data-require="jquery@1.7.2" data-semver="1.7.2" src="//cdnjs.cloudflare.com/ajax/libs/jquery/1.7.2/jquery.min.js"></script>
-  <script data-require="lodash.js@4.17.4" data-semver="4.17.4" src="https://cdn.jsdelivr.net/npm/lodash@4.17.4/lodash.min.js"></script>
-  <script data-require="moment.js@2.5.1" data-semver="2.5.1" src="//cdnjs.cloudflare.com/ajax/libs/moment.js/2.5.1/moment.js"></script>
+  
   <!-- <link rel="stylesheet" href="style.css" /> -->
   
   <style type="text/css">
@@ -27,12 +25,25 @@
     }
   </style>
 
-  <script type="text/javascript" src="https://www.gstatic.com/charts/loader.js"></script>
-  <script src="es6/reporter.js"></script>
+
 </head>
 
-<body>  
-  <div id="myCanvas"></div>
+<body>
+  <div id="myCanvas" style="overflow:visible; left:0px;"></div>
+
+  <script data-require="jquery@1.7.2" data-semver="1.7.2" src="//cdnjs.cloudflare.com/ajax/libs/jquery/1.7.2/jquery.min.js"></script>
+  <script data-require="lodash.js@4.17.4" data-semver="4.17.4" src="https://cdn.jsdelivr.net/npm/lodash@4.17.4/lodash.min.js"></script>
+  <script data-require="moment.js@*" data-semver="2.1.0" src="//cdnjs.cloudflare.com/ajax/libs/moment.js/2.1.0/moment.min.js"></script>
+  <script type="text/javascript" src="https://www.gstatic.com/charts/loader.js"></script>
+  <script src="es6/reporter.js"></script>
+
+  <script>
+    GLOBAL_BASE_URL = "http://localhost:8080/public/xml/search-result.xml";
+    GLOBAL_JQL = "project in (LIFETRACK, THNQNATIVE) AND issuetype=Story";
+
+    // jql parser 만든 후에는 사용하지 않는다.(다음 버전)
+    GLOBAL_PROJECTS = ['LIFETRACK', 'THNQNATIVE'];
+  </script>
 </body>
 
 </html>

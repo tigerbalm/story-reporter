@@ -21,7 +21,6 @@ google.charts.setOnLoadCallback(() => {
     main();
 });
 
-
 class Story {
     constructor(item) {
         const $item = $(item);
@@ -54,7 +53,10 @@ class MyUrl {
     _baseUrl() {
         console.log("hostname: " + location.hostname);
 
-        if (location.hostname.startsWith("localhost")) {
+        if (typeof GLOBAL_BASE_URL !== 'undefined' && GLOBAL_BASE_URL) {
+            console.log("found base url: " + GLOBAL_BASE_URL);
+            return GLOBAL_BASE_URL;
+        } else if (location.hostname.startsWith("localhost")) {
             return "http://localhost:8080/public/xml/search-result.xml";
         }
 
@@ -62,6 +64,13 @@ class MyUrl {
     }
 
     _buildJql() {
+        if (typeof GLOBAL_JQL !== 'undefined' && GLOBAL_JQL) {
+            console.log("found jql: " + GLOBAL_JQL);
+            return GLOBAL_JQL;
+        } else if (location.hostname.startsWith("localhost")) {
+            return "project in (LIFETRACK, THNQNATIVE) AND issuetype=Story";
+        }
+
         return "project in (LIFETRACK, THNQNATIVE) AND issuetype=Story";
     }
 
@@ -108,8 +117,6 @@ class SearchResult {
         xmlitems.each((index, value) => {
             this._stories.push(new Story(value));
         });
-
-        //console.log(JSON.stringify(this.items));
     }
 
     // returns unique projects list
@@ -150,7 +157,9 @@ class UserStat {
                 this.projectStats.set(key, statusMap);
             }).value();
         this.storiesInterested = _(stories).chain()
+            .filter(s => s.dueDate && s.startDate)
             .filter(s => this._interestedDates(s.dueDate, s.startDate))
+            .map(s => this._adjustDates(s))
             .value();
 
         console.log(JSON.stringify(this.storiesInterested));
@@ -158,31 +167,98 @@ class UserStat {
     }
 
     _interestedDates(...dates) {
-        const prevWeek = moment().startOf('week').subtract(1, 'weeks');
-        const nextWeek = moment().endOf('week').add(1, 'weeks');
+        const prevWeek = this._datesLowerBoundary();
+        const nextWeek = this._datesUpperBoundary();
 
         const betweens = _(dates).chain()
+            //.map(d => moment(d))
             .filter(d => !isNaN(d) && this._isBetween(d, prevWeek, nextWeek))
             .value();
 
         return betweens.length > 0;
     }
 
-    _isBetween(target, left, right) {
-        return (target.isSame(left) || target.isAfter(left)) &&
-            (target.isSame(right) || target.isBefore(right));
+    _isBetween(source, lower, upper) {
+        return this._isSameOrAfter(source, lower) && this._isSameOrBefore(source, upper);
+    }
+
+    _isSameOrAfter(source, target) {
+        // unless source and target is not moment object, throw exception... how?
+
+        return source.isSame(target) || source.isAfter(target);
+    }
+
+    _isSameOrBefore(source, target) {
+        // unless source and target is not moment object, throw exception... how?
+        
+        return source.isSame(target) || source.isBefore(target);
+    }
+
+    _datesLowerBoundary() {
+        return moment().startOf('week').subtract(1, 'weeks');
+    }
+
+    _datesUpperBoundary() {
+        return moment().endOf('week').add(1, 'weeks');
+    }
+
+    _adjustDates(s) {
+        if (s.startDate.isBefore(this._datesLowerBoundary())) {
+            s.startDate = this._datesLowerBoundary();
+        }
+
+        if (s.dueDate.isAfter(this._datesUpperBoundary())) {
+            s.dueDate = this._datesUpperBoundary().subtract(1, 'hours');
+        }
+
+        return s;
     }
 }
+
+myProjectMap = new Map();
 
 function main() {
     'use strict';
 
     generateHtml();
 
+    const deferred = _(GLOBAL_PROJECTS).map(p => $.Deferred()).value();    
+
+    $.when.apply($, deferred).then(
+        function success() {
+            const docs = arguments;
+            _(docs).map(x => $(x)).map(xx => {
+                const total = parseInt(xx.find('issue').attr('total') || 0, 10);
+                const key = xx.find('item:first > project').attr('key');
+                const dispName = xx.find('item:first > project').text();
+
+                myProjectMap.set(key, {total: total, dispName: dispName});
+            }).value();
+
+            displayMain();
+        },
+
+        function failed(results) {
+            
+        }
+    );
+
+    const projectQueries = _(GLOBAL_PROJECTS).map(p => {
+        if (location.hostname.startsWith("localhost")) {
+            return `http://localhost:8080/public/xml/search-result-prj-${p}.xml`;
+        }
+        const start = moment().startOf('year').format('YYYY-MM-DD');
+        const end = moment().endOf('year').format('YYYY-MM-DD');
+        
+        return `http://mlm.lge.com/di/sr/jira.issueviews:searchrequest-xml/temp/SearchRequest.xml?jqlQuery=project = ${p} AND created >= ${start} AND created <= ${end}&tempMax=2&field=project`; 
+    }).map((q, i) => $.get(q, 'xml').success(xmldoc => deferred[i].resolve(xmldoc)).error(e => deferred[i].reject())).value();
+}
+
+function displayMain() {
     const url = new MyUrl();
 
     $.get(url.searchUrl, 'xml')
-        .then(xmlDoc => {
+        .success(xmlDoc => {
             const result = new SearchResult(xmlDoc);
 
             addLinks("projects", result.projects(), onProjectClick);
@@ -217,48 +293,22 @@ function main() {
                 showTimelineChart(`timeline_${user.key}`, user.storiesInterested);
             }).value();
 
-        });
-    // .then(result => {
-    //     addLinks("projects", result.projects(), onProjectClick);
-    //     addLinks("components", result.components(), onComponentClick);
+        })
+        .error(err => $("#people_div").html(`
+            <br>Error: ${err.statusText}(${err.status})
+            <br>ResponseText: ${err.responseText}
+        `));
+}
 
-    //     return _(result.stories()).chain()
-    //         .groupBy(story => story.assignee)
-    //         .map((stories, key) => {
-    //             return new UserStat(key, stories)
-    //         })
-    //         .value();
-    // })
-    // .then(userStatArray => {
-    //     //const issues = result.stories();
+function showWorkView(is, storyArray) {
 
-    //     console.log(JSON.stringify(userStatArray));
-
-    //     _(userStatArray).map(user => {
-    //         return {
-    //             name: user.name,
-    //             table: genTable(user)
-    //         };
-    //     }).map(pair => {
-    //         console.log("pair.table: " + pair.table);
-
-    //         $('#people_table > tbody:first').append(`
-    //             <tr>
-    //                 <td>${pair.name}</td>
-    //                 <td>${pair.table}</td>
-    //             </tr>
-    //         `);
-    //     }).value();
-
-    //     //drawChart(issues);
-    //     _(userStatArray).map(user => {
-    //         user.projectStats.forEach((v, k) => showPieChart(`${user.key}_${k}`, k, v));
-    //         showTimelineChart(`timeline_${user.key}`, user.storiesInterested);
-    //     }).value();
-    // });
 }
 
 function showTimelineChart(id, storyArray) {
+    if (storyArray.length <= 0) {
+        return;
+    }
+
     var container = document.getElementById(id);
     var chart = new google.visualization.Timeline(container);
     var dataTable = new google.visualization.DataTable();
@@ -277,24 +327,20 @@ function showTimelineChart(id, storyArray) {
     });
 
     const rows = _(storyArray).map(story => {
-        console.log("story.summary: " + story.summary);
-        console.log("startDate:" + story.startDate.toDate());
-        console.log("dueDate:" + story.dueDate.toDate());
-
-        //const start = new Date(story.startDate.year(), story.startDate.month(), story.startDate.date(), 0, 1, 0);
-        //const end = new Date(story.dueDate.year(), story.dueDate.month(), story.dueDate.date(), 0, 1, 2);
-        var start = new Date(2018, 10, 11);
-        var end = new Date(2018, 10, 14);
-        return ["story.summary", start, end];
+        return [story.summary, story.startDate.toDate(), story.dueDate.toDate()];
     }).value();
 
     dataTable.addRows(rows);
 
     var options = {
         hAxis: {
+            //minValue: moment().startOf('week').subtract(1, 'weeks').toDate(),
+            //maxValue: moment().endOf('week').add(1, 'weeks').toDate()
             minValue: moment().startOf('week').subtract(1, 'weeks').toDate(),
-            maxValue: moment().endOf('week').add(1, 'weeks').toDate()
-        }
+            maxValue: moment().endOf('week').add(1, 'weeks').add(1, 'hours').toDate()
+        },
+        width: 1350,     
+        height: rows.length * 100
     };
 
     chart.draw(dataTable, options);
@@ -307,12 +353,14 @@ function showPieChart(id, projectKey, statusMap) {
 
     statusMap.forEach((v, k) => dataArr.push([k, v]));
 
-    dataArr.push(['Total', 20]);
+    dataArr.push(['Total', myProjectMap.get(projectKey).total]);
 
     const data = google.visualization.arrayToDataTable(dataArr);
 
     var options = {
-        title: projectKey
+        title: myProjectMap.get(projectKey).dispName,
+        width: 400,
+        height: 300
     };
 
     var chart = new google.visualization.PieChart(document.getElementById(id));
@@ -323,16 +371,16 @@ function showPieChart(id, projectKey, statusMap) {
 function genTable(user) {
     const prjCount = user.projectStats.size;
     let prjTds = "";
-    user.projectStats.forEach((v, k) => prjTds += `<td height='300' id='${user.key}_${k}'>${k} - ${v}</td>`);
+    user.projectStats.forEach((v, k) => prjTds += `<td id='${user.key}_${k}'>${k} - ${v}</td>`);
 
     console.log("prjTds: " + prjTds);
 
-    return `<table id='worktable_${user.key}'>                
+    return `<table width=100% id='worktable_${user.key}'>                
                 <tr>                    
                     ${prjTds}
                 </tr>
                 <tr>
-                    <td height='300' colspan='${prjCount}' id='timeline_${user.key}'></td>
+                    <td colspan='${prjCount}' id='timeline_${user.key}'></td>
                 </tr>
             </table>
             `;
@@ -354,7 +402,7 @@ function generateHtml() {
         <div id='components'>component div</div>
         <div id='issues'></div>
         <div id='people_div'>
-            <table id='people_table'>
+            <table id='people_table' width=100%>
                 <tbody id='first'>
                 <tr>
                     <th> name </th>
