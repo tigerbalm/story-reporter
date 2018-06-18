@@ -14,6 +14,8 @@ google.charts.load('current', {
 
 google.charts.setOnLoadCallback(() => {
     console.log("google chart loaded");
+    
+    startProgress();    
 
     $.ajaxSetup({
         xhrFields: {
@@ -24,22 +26,37 @@ google.charts.setOnLoadCallback(() => {
     main();
 });
 
+let progressTimer;
+function startProgress() {
+    progressTimer = setInterval(() => {
+        //const text = $("#center_progress_div").html();
+
+        const current = $("#processing_flash").css("color");
+        $("#processing_flash").css("color", current == "rgb(255, 0, 0)" ? "blue" : "red");
+    }, 1000);
+}
+
+function stopProgress() {
+    clearInterval(progressTimer);
+    $("#center_progress_div").hide();
+}
+
 class Story {
     constructor(item) {
         const $item = $(item);
 
-        this.key = $item.find('key').text();
-        this.proejctKey = $item.find('project').attr('key');
-        this.proejctName = $item.find('project').text();
-        this.type = $item.find('type').text();
-        this.status = $item.find('status').text();
-        this.assignee = $item.find('assignee').text();
-        this.summary = $item.find('summary').text();
-        this.component = $item.find('component').text();
+        this.key = $item.find('key').text() || "";
+        this.projectKey = $item.find('project').attr('key') || "";
+        this.projectName = $item.find('project').text() || "";
+        this.type = $item.find('type').text() || "";
+        this.status = $item.find('status').text() || "";
+        this.assignee = $item.find('assignee').text() || "";
+        this.summary = $item.find('summary').text() || "";
+        this.component = $item.find('component').text() || "";
         this.createdDate = moment($item.find('created').text());
         this.dueDate = moment($item.find('due').text());
         this.startDate = moment($item.find('customfield[id="customfield_12045"] > customfieldvalues > customfieldvalue').text());
-        this.link = $item.find('link').text();
+        this.link = $item.find('link').text() || "";
     }
 }
 
@@ -128,12 +145,19 @@ class SearchResult {
 
     // returns unique projects list
     projects() {
-        return ["all", "ThinQ", "Lifetracker"];
+        return _(this._stories)
+                    .uniqBy(s => s.projectName)
+                    .map(s => s.projectName)
+                    .value();
     }
 
     // returns unique projects list
     components() {
-        return ["all", "performance", "legacy"];
+        return _(this._stories)          
+                .filter(s => s.component)      
+                .uniqBy(s => s.component)
+                .map(s => s.component)
+                .value();
     }
 
     // return arrays of Issue
@@ -152,7 +176,7 @@ class UserStat {
         this.key = name.replace(/[^A-Za-z]/g, "");
 
         this.projectStats = new Map();
-        _(stories).chain().groupBy(s => s.proejctKey)
+        _(stories).chain().groupBy(s => s.projectKey)
             .map((group, key) => {
                 const groupByStatus = _(group).chain().groupBy(s => s.status)
                     .value();
@@ -169,8 +193,8 @@ class UserStat {
             .map(s => this._adjustDates(s))
             .value();
 
-        console.log(JSON.stringify(this.storiesInterested));
-        console.log(this.projectStats);
+        //console.log(JSON.stringify(this.storiesInterested));
+        //console.log(this.projectStats);
     }
 
     _interestedDates(...dates) {
@@ -239,7 +263,7 @@ function main() {
                 const key = xx.find('item:first > project').attr('key');
                 const dispName = xx.find('item:first > project').text();
 
-                console.log(`project map : ${key}, ${dispName}, ${total}`);
+                log(`Build project map : ${key}, ${dispName}, ${total}`);
 
                 myProjectMap.set(key, {total: total, dispName: dispName});
             }).value();
@@ -248,7 +272,6 @@ function main() {
         },
 
         function failed(results) {
-            
         }
     );
 
@@ -268,7 +291,16 @@ function main() {
         }        
         
         return `http://mlm.lge.com/di/sr/jira.issueviews:searchrequest-xml/temp/SearchRequest.xml?jqlQuery=project = ${p} AND ${componentsAnd} created >= ${start} AND created <= ${end} AND assignee not in (unassigned)&tempMax=2&field=project`; 
-    }).map((q, i) => $.get(q, 'xml').success(xmldoc => deferred[i].resolve(xmldoc)).error(e => deferred[i].reject())).value();
+    }).map((q, i) => {
+        $.get(q, 'xml')
+            .success(xmldoc => {                
+                deferred[i].resolve(xmldoc);
+            })
+            .fail(e => {
+                log("Error: get project data - " + GLOBAL_PROJECTS[i]);
+                deferred[i].reject();
+            });
+    }).value();
 }
 
 function displayMain() {
@@ -295,8 +327,6 @@ function displayMain() {
                     table: genTable(user)
                 };
             }).map(pair => {
-                console.log("pair.table: " + pair.table);
-
                 $('#people_table > tbody:first').append(`
                         <tr>
                             <td>${pair.name}</td>
@@ -304,22 +334,18 @@ function displayMain() {
                         </tr>
                     `);
             }).value();
-
-            //drawChart(issues);
+            
             _(userStatArray).map(user => {
                 user.projectStats.forEach((v, k) => showPieChart(`${user.key}_${k}`, k, v));
                 showTimelineChart(`timeline_${user.key}`, user.storiesInterested);
             }).value();
 
+            stopProgress();
         })
         .error(err => $("#people_div").html(`
             <br>Error: ${err.statusText}(${err.status})
             <br>ResponseText: ${err.responseText}
         `));
-}
-
-function showWorkView(is, storyArray) {
-
 }
 
 function showTimelineChart(id, storyArray) {
@@ -380,7 +406,8 @@ function showPieChart(id, projectKey, statusMap) {
     var options = {
         title: myProjectMap.get(projectKey).dispName,
         width: 400,
-        height: 300
+        height: 300,
+        pieHole: 0.4
     };
 
     var chart = new google.visualization.PieChart(document.getElementById(id));
@@ -421,10 +448,14 @@ function onClickRefresh() {
 }
 
 function generateHtml() {
-    var html = `
+    var html = `        
         <div id='query_div' hidden><textarea rows="1" style='width: 500px; font: 1em sans-serif;-moz-box-sizing: border-box; box-sizing: border-box; border: 1px solid #999;' id='jql_query_text'/><button onClick='onClickRefresh()'>Refresh</button></div>
         <div id='projects' hidden>projects div</div>
         <div id='components' hidden>component div</div>
+        <div id='center_progress_div'>
+            <p id='processing_flash' style='font-size: 300%; padding: 270px 0 0 0; text-align: center; color:red; font-weight:bold;'>Processing...</p>
+            <p id='log_message' style='text-align: center; padding: 0 0'></p>
+        </div>
         <div id='issues'></div>
         <div id='people_div'>
             <table id='people_table' width=100%>
@@ -438,6 +469,14 @@ function generateHtml() {
 }
 
 function addLinks(id, items, onClick) {
+    console.log("addLink items: " + items);
+
     const html = items.map(item => `<span onclick='${onClick.name}("${item}")'>${item}</span>`).join(" | ");
     $(`#${id}`).html(html);
+}
+
+function log(text) {    
+    console.log(text);
+    
+    $('#log_message').html(text.replace('Error', '<span style="color:red; font-weight:bold;">Error</span>'));
 }
