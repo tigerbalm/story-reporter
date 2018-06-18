@@ -1,9 +1,12 @@
 // todo
-// 0. query 시간 정보 추가하기
-// 1. project 정보 가져오기
 // 2. jpl query field 만들기
 // 3. ui 작업하기
 // 4. webpack 으로 js 파일 분리하기
+// 5. url 작업 일관되게 변경
+// 6. moment wrapper 작성
+// 7. jql parser 만들기.. 그래도 component 는 다르게 해야 하지 않는지..
+// 8. error 처리 (search query 에서 component 를 넣을지 말지.. 별도로도 처리가 가능한데..)
+// 9. timeline graph 다시 그리기
 
 google.charts.load('current', {
     'packages': ['timeline', 'corechart']
@@ -66,7 +69,11 @@ class MyUrl {
     _buildJql() {
         if (typeof GLOBAL_JQL !== 'undefined' && GLOBAL_JQL) {
             console.log("found jql: " + GLOBAL_JQL);
-            return GLOBAL_JQL;
+
+            const start = moment().startOf('year').format('YYYY-MM-DD');
+            const end = moment().endOf('year').format('YYYY-MM-DD');
+
+            return `${GLOBAL_JQL} AND created >= ${start} AND created <= ${end} AND assignee not in (unassigned)`;
         } else if (location.hostname.startsWith("localhost")) {
             return "project in (LIFETRACK, THNQNATIVE) AND issuetype=Story";
         }
@@ -85,7 +92,7 @@ class MyUrl {
     _buildSearchUrl() {
         const params = {
             jqlQuery: this.jqlQuery,
-            tempMax: 10
+            tempMax: 1000
         };
 
         return this.baseUrl + "?" + $.param(params) + "&" + this.preferredFields;
@@ -157,7 +164,7 @@ class UserStat {
                 this.projectStats.set(key, statusMap);
             }).value();
         this.storiesInterested = _(stories).chain()
-            .filter(s => s.dueDate && s.startDate)
+            .filter(s => (s.dueDate && s.dueDate.isValid()) && (s.startDate && s.startDate.isValid()))
             .filter(s => this._interestedDates(s.dueDate, s.startDate))
             .map(s => this._adjustDates(s))
             .value();
@@ -232,6 +239,8 @@ function main() {
                 const key = xx.find('item:first > project').attr('key');
                 const dispName = xx.find('item:first > project').text();
 
+                console.log(`project map : ${key}, ${dispName}, ${total}`);
+
                 myProjectMap.set(key, {total: total, dispName: dispName});
             }).value();
 
@@ -243,19 +252,28 @@ function main() {
         }
     );
 
-    const projectQueries = _(GLOBAL_PROJECTS).map(p => {
+    const projectQueries = _(GLOBAL_PROJECTS).map((p, i) => {
         if (location.hostname.startsWith("localhost")) {
             return `http://localhost:8080/public/xml/search-result-prj-${p}.xml`;
         }
         const start = moment().startOf('year').format('YYYY-MM-DD');
         const end = moment().endOf('year').format('YYYY-MM-DD');
         
-        return `http://mlm.lge.com/di/sr/jira.issueviews:searchrequest-xml/temp/SearchRequest.xml?jqlQuery=project = ${p} AND created >= ${start} AND created <= ${end}&tempMax=2&field=project`; 
+        let componentsAnd = "";
+        if (typeof GLOBAL_COMPONENTS !== 'undefined' && GLOBAL_COMPONENTS) {
+            //"component in ("SmartThinQ BasicDev", "SmartThinQ H&A Service", "SmartThinQ HE Service")"
+
+            const compString = _(GLOBAL_COMPONENTS[i]).map(c => encodeURI(`'${c}'`)).value().join(',');
+            componentsAnd = `component in (${compString}) AND`;
+        }        
+        
+        return `http://mlm.lge.com/di/sr/jira.issueviews:searchrequest-xml/temp/SearchRequest.xml?jqlQuery=project = ${p} AND ${componentsAnd} created >= ${start} AND created <= ${end} AND assignee not in (unassigned)&tempMax=2&field=project`; 
     }).map((q, i) => $.get(q, 'xml').success(xmldoc => deferred[i].resolve(xmldoc)).error(e => deferred[i].reject())).value();
 }
 
 function displayMain() {
     const url = new MyUrl();
+    $('#jql_query_text').val(url.jqlQuery);
 
     $.get(url.searchUrl, 'xml')
         .success(xmlDoc => {
@@ -331,29 +349,31 @@ function showTimelineChart(id, storyArray) {
     }).value();
 
     dataTable.addRows(rows);
+    const chartHeight = (dataTable.getNumberOfRows() + 1) * 41 + 50;
 
     var options = {
-        hAxis: {
-            //minValue: moment().startOf('week').subtract(1, 'weeks').toDate(),
-            //maxValue: moment().endOf('week').add(1, 'weeks').toDate()
+        hAxis: {            
             minValue: moment().startOf('week').subtract(1, 'weeks').toDate(),
             maxValue: moment().endOf('week').add(1, 'weeks').add(1, 'hours').toDate()
         },
         width: 1350,     
-        height: rows.length * 100
+        height: chartHeight
     };
 
     chart.draw(dataTable, options);
 }
 
 function showPieChart(id, projectKey, statusMap) {
+    console.log("showPieChart: " + projectKey);
+
     let dataArr = [
         ['Status', 'Story']
     ];
 
     statusMap.forEach((v, k) => dataArr.push([k, v]));
+    const numOfMine = _.sum(statusMap.values());
 
-    dataArr.push(['Total', myProjectMap.get(projectKey).total]);
+    dataArr.push(['Total', (myProjectMap.get(projectKey).total - numOfMine)]);
 
     const data = google.visualization.arrayToDataTable(dataArr);
 
@@ -375,7 +395,7 @@ function genTable(user) {
 
     console.log("prjTds: " + prjTds);
 
-    return `<table width=100% id='worktable_${user.key}'>                
+    return `<table style='border: 1px solid black;' width=100% id='worktable_${user.key}'>                
                 <tr>                    
                     ${prjTds}
                 </tr>
@@ -396,18 +416,19 @@ function onComponentClick(comp) {
     console.log(`Component "${comp}" is selected.`);
 }
 
+function onClickRefresh() {
+    console.log("onClickRefresh clicked");
+}
+
 function generateHtml() {
     var html = `
-        <div id='projects'>projects div</div>
-        <div id='components'>component div</div>
+        <div id='query_div' hidden><textarea rows="1" style='width: 500px; font: 1em sans-serif;-moz-box-sizing: border-box; box-sizing: border-box; border: 1px solid #999;' id='jql_query_text'/><button onClick='onClickRefresh()'>Refresh</button></div>
+        <div id='projects' hidden>projects div</div>
+        <div id='components' hidden>component div</div>
         <div id='issues'></div>
         <div id='people_div'>
             <table id='people_table' width=100%>
-                <tbody id='first'>
-                <tr>
-                    <th> name </th>
-                    <th> work </th>
-                </tr>
+                <tbody id='first'>                
                 </tbody>
             </table>
         </div>

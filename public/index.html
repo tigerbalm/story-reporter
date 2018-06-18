@@ -39,10 +39,17 @@
 
   <script>
     GLOBAL_BASE_URL = "http://localhost:8080/public/xml/search-result.xml";
-    GLOBAL_JQL = "project in (LIFETRACK, THNQNATIVE) AND issuetype=Story";
+    GLOBAL_JQL = 'project in (LGEIME, LIFETRACK, THNQNATIVE, SMARTDRIVE, THINQ) AND component in ("LGHealth ResEffiiciency", "SmartThinQ BasicDev", "SmartThinQ H&A Service", "SmartThinQ HE Service", "IME_HA", "IME_Task", "IME_Solution", "IME_Dev", "IME_Platform", "IME_Memory", "MrrorDrivev1.2 relelase", "MrrorDrivev1.3 BasicDev", "IUC BasicDev", "IUC AdditionalDev", "IUC Stabilization", "IUC ResEfficiency")';
 
     // jql parser 만든 후에는 사용하지 않는다.(다음 버전)
-    GLOBAL_PROJECTS = ['LIFETRACK', 'THNQNATIVE'];
+    GLOBAL_PROJECTS = ['LIFETRACK', 'THNQNATIVE', 'LGEIME', 'SMARTDRIVE', 'THINQ'];
+    GLOBAL_COMPONENTS = [
+      ['LGHealth ResEffiiciency'],  // LIFETRACK
+      ['SmartThinQ BasicDev', 'SmartThinQ H&A Service', 'SmartThinQ HE Service', 'SmartThinQ Validation'],  // THNQNATIVE
+      ['IME', 'IME_HA', 'IME_Task', 'IME_Solution', 'IME_Dev', 'IME_Platform', 'IME_Memory'],  // LGEIME
+      ['MrrorDrivev1.2 relelase', 'MrrorDrivev1.3 BasicDev', 'MrrorDrivev1.3 CCC'],  // SMARTDRIVE
+      ['IUC BasicDev', 'IUC AdditionalDev', 'IUC Stabilization', 'IUC ResEfficiency']  // THINQ
+    ];
   </script>
 </body>
 
