@@ -282,18 +282,19 @@ function main() {
         if (location.hostname.startsWith("localhost")) {
             return `http://localhost:8080/public/xml/search-result-prj-${p}.xml`;
         }
+        
         const start = moment().startOf('year').format('YYYY-MM-DD');
         const end = moment().endOf('year').format('YYYY-MM-DD');
         
         let componentsAnd = "";
         if (typeof GLOBAL_COMPONENTS !== 'undefined' && GLOBAL_COMPONENTS) {
-            //"component in ("SmartThinQ BasicDev", "SmartThinQ H&A Service", "SmartThinQ HE Service")"
-
-            const compString = _(GLOBAL_COMPONENTS[i]).map(c => encodeURI(`'${c}'`)).value().join(',');
+            const compString = _(GLOBAL_COMPONENTS[i]).map(c => `"${c}"`).value().join(',');
             componentsAnd = `component in (${compString}) AND`;
-        }        
+        }
         
-        return `http://mlm.lge.com/di/sr/jira.issueviews:searchrequest-xml/temp/SearchRequest.xml?jqlQuery=project = ${p} AND ${componentsAnd} created >= ${start} AND created <= ${end} AND assignee not in (unassigned)&tempMax=2&field=project`; 
+        const query = encodeURIComponent(`project = ${p} AND ${componentsAnd} created >= ${start} AND created <= ${end} AND assignee not in (unassigned)`);
+
+        return `http://mlm.lge.com/di/sr/jira.issueviews:searchrequest-xml/temp/SearchRequest.xml?jqlQuery=${query}&tempMax=2&field=project`;
     }).map((q, i) => {
         $.get(q, 'xml')
             .success(xmldoc => {                
@@ -382,7 +383,7 @@ function showTimelineChart(id, storyArray) {
         }
 
         if (vaildDate(start) && !vaildDate(end)) {
-            end = moment().endOf('week').add(1, 'weeks').add(1, 'hours').toDate();
+            end = moment().endOf('week').add(1, 'weeks').add(1, 'hours');
         }
         
         start = maxDate(start, moment().startOf('week').subtract(1, 'weeks'));
