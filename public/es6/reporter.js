@@ -1,6 +1,5 @@
 // todo
-// 2. jpl query field 만들기
-// 3. ui 작업하기
+// 3. timeline view 에서 과거는 resolved 만 / 미래는 open만 표시
 // 4. webpack 으로 js 파일 분리하기
 // 5. url 작업 일관되게 변경
 // 6. moment wrapper 작성
@@ -30,9 +29,13 @@ let progressTimer;
 function startProgress() {
     progressTimer = setInterval(() => {
         //const text = $("#center_progress_div").html();
+        const ch = ['.', '..', '...'];
 
-        const current = $("#processing_flash").css("color");
-        $("#processing_flash").css("color", current == "rgb(255, 0, 0)" ? "blue" : "red");
+        const curHtml = $("#processing_flash").html();
+        $("#processing_flash").html(ch[curHtml.length % 3]);
+
+        const curColor = $("#processing_flash").css("color");
+        $("#processing_flash").css("color", curColor == "rgb(255, 0, 0)" ? "blue" : "red");
     }, 1000);
 }
 
@@ -53,10 +56,11 @@ class Story {
         this.assignee = $item.find('assignee').text() || "";
         this.summary = $item.find('summary').text() || "";
         this.component = $item.find('component').text() || "";
+        this.link = $item.find('link').text() || "";
         this.createdDate = moment($item.find('created').text());
+        
         this.dueDate = moment($item.find('due').text());
         this.startDate = moment($item.find('customfield[id="customfield_12045"] > customfieldvalues > customfieldvalue').text());
-        this.link = $item.find('link').text() || "";
     }
 }
 
@@ -187,10 +191,10 @@ class UserStat {
 
                 this.projectStats.set(key, statusMap);
             }).value();
+
         this.storiesInterested = _(stories).chain()
-            .filter(s => (s.dueDate && s.dueDate.isValid()) && (s.startDate && s.startDate.isValid()))
+            .filter(s => (s.dueDate && s.dueDate.isValid()) || (s.startDate && s.startDate.isValid()))
             .filter(s => this._interestedDates(s.dueDate, s.startDate))
-            .map(s => this._adjustDates(s))
             .value();
 
         //console.log(JSON.stringify(this.storiesInterested));
@@ -202,15 +206,14 @@ class UserStat {
         const nextWeek = this._datesUpperBoundary();
 
         const betweens = _(dates).chain()
-            //.map(d => moment(d))
             .filter(d => !isNaN(d) && this._isBetween(d, prevWeek, nextWeek))
             .value();
 
         return betweens.length > 0;
     }
 
-    _isBetween(source, lower, upper) {
-        return this._isSameOrAfter(source, lower) && this._isSameOrBefore(source, upper);
+    _isBetween(source, lower, upper) {        
+        return source && this._isSameOrAfter(source, lower) && this._isSameOrBefore(source, upper);
     }
 
     _isSameOrAfter(source, target) {
@@ -371,7 +374,21 @@ function showTimelineChart(id, storyArray) {
     });
 
     const rows = _(storyArray).map(story => {
-        return [story.summary, story.startDate.toDate(), story.dueDate.toDate()];
+        let start = story.startDate;
+        let end = story.dueDate;
+
+        if (!vaildDate(start) && vaildDate(end)) {
+            start = moment(end).startOf('week');
+        }
+
+        if (vaildDate(start) && !vaildDate(end)) {
+            end = moment().endOf('week').add(1, 'weeks').add(1, 'hours').toDate();
+        }
+        
+        start = maxDate(start, moment().startOf('week').subtract(1, 'weeks'));
+        end = minDate(end, moment().endOf('week').add(1, 'weeks')).endOf('day');
+        
+        return [story.summary, start.toDate(), end.toDate()];
     }).value();
 
     dataTable.addRows(rows);
@@ -389,25 +406,44 @@ function showTimelineChart(id, storyArray) {
     chart.draw(dataTable, options);
 }
 
+function vaildDate(date) {
+    return date && date.isValid();
+}
+
+function minDate(a, b) {
+    return a.isBefore(b) ? a : b;
+}
+
+function maxDate(a, b) {
+    return a.isAfter(b) ? a : b;
+}
+
 function showPieChart(id, projectKey, statusMap) {
     console.log("showPieChart: " + projectKey);
 
     let dataArr = [
-        ['Status', 'Story']
+        ['Who', 'Jobs']
     ];
 
-    statusMap.forEach((v, k) => dataArr.push([k, v]));
-    const numOfMine = _.sum(statusMap.values());
+    const myJobs = _.sum(Array.from(statusMap.values()));
+    const others = myProjectMap.get(projectKey).total - myJobs;
+    console.log(`${projectKey} - myJobs: ${myJobs}, others: ${others}`);
 
-    dataArr.push(['Total', (myProjectMap.get(projectKey).total - numOfMine)]);
+    dataArr.push(['My jobs', myJobs]);
+    dataArr.push(['Others', others]);
 
     const data = google.visualization.arrayToDataTable(dataArr);
-
+    
     var options = {
-        title: myProjectMap.get(projectKey).dispName,
+        title: `${myProjectMap.get(projectKey).dispName} (${myProjectMap.get(projectKey).total})`,
         width: 400,
         height: 300,
-        pieHole: 0.4
+        pieHole: 0.4,
+        pieSliceText: 'value',
+        slices: {  
+            0: {offset: 0.2, color: '#9966ff'},
+            1: {color: '#33cccc'}            
+        },
     };
 
     var chart = new google.visualization.PieChart(document.getElementById(id));
@@ -453,8 +489,7 @@ function generateHtml() {
         <div id='projects' hidden>projects div</div>
         <div id='components' hidden>component div</div>
         <div id='center_progress_div'>
-            <p id='processing_flash' style='font-size: 300%; padding: 270px 0 0 0; text-align: center; color:red; font-weight:bold;'>Processing...</p>
-            <p id='log_message' style='text-align: center; padding: 0 0'></p>
+            <p id='processing_flash' style='font-size:large; padding: 270px 0; text-align: center; color:red; font-weight:bold;'>.</p>            
         </div>
         <div id='issues'></div>
         <div id='people_div'>
@@ -478,5 +513,5 @@ function addLinks(id, items, onClick) {
 function log(text) {    
     console.log(text);
     
-    $('#log_message').html(text.replace('Error', '<span style="color:red; font-weight:bold;">Error</span>'));
+    //$('#log_message').html(text.replace('Error', '<span style="color:red; font-weight:bold;">Error</span>'));
 }
