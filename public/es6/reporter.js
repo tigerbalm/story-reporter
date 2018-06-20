@@ -52,15 +52,29 @@ class Story {
         this.projectKey = $item.find('project').attr('key') || "";
         this.projectName = $item.find('project').text() || "";
         this.type = $item.find('type').text() || "";
-        this.status = $item.find('status').text() || "";
+        this.status = this._status($item.find('status').text() || "");
         this.assignee = $item.find('assignee').text() || "";
         this.summary = $item.find('summary').text() || "";
         this.component = $item.find('component').text() || "";
         this.link = $item.find('link').text() || "";
-        this.createdDate = moment($item.find('created').text());
         
-        this.dueDate = moment($item.find('due').text());
+        this.createdDate = moment($item.find('created').text());        
         this.startDate = moment($item.find('customfield[id="customfield_12045"] > customfieldvalues > customfieldvalue').text());
+        this.resolvedDate = moment($item.find('resolved').text());
+
+        if (this.status === "resolved") {
+            this.dueDate = moment(this.resolvedDate);
+        } else {
+            this.dueDate = moment($item.find('due').text());
+        }
+    }
+
+    _status(status) {
+        if (_.findIndex(['closed', 'resolved'], s => s.toUpperCase() === status.toUpperCase()) > -1) {
+            return "resolved";
+        } else {
+            return "open";
+        }
     }
 }
 
@@ -192,13 +206,27 @@ class UserStat {
                 this.projectStats.set(key, statusMap);
             }).value();
 
-        this.storiesInterested = _(stories).chain()
-            .filter(s => (s.dueDate && s.dueDate.isValid()) || (s.startDate && s.startDate.isValid()))
-            .filter(s => this._interestedDates(s.dueDate, s.startDate))
-            .value();
+        // resolved job - due / resolved is in prev_week
+        this.resolvedJobs = _(stories).chain()
+                                    .filter(s => s.status === "resolved")
+                                    .filter(s => this._vaildDate(s.dueDate))
+                                    .filter(s => this._isBetween(s.dueDate, moment().startOf("week").subtract(1, "weeks"), moment().endOf("day")))
+                                    .value();
 
-        //console.log(JSON.stringify(this.storiesInterested));
-        //console.log(this.projectStats);
+        // open job - start date < next_week || due in cur_week
+        this.openJobs = _(stories).chain()
+                                    .filter(s => s.status !== "resolved")
+                                    .filter(s => this._vaildStartDate(s.startDate))
+                                    .filter(s => this._vaildEndDate(s.dueDate))
+                                    .value();
+    }
+
+    _vaildStartDate(date) {
+        return !vaildDate(date) || date.isBefore(this._datesUpperBoundary());
+    }
+
+    _vaildEndDate(date) {
+        return vaildDate(date) && date.isAfter(this._datesLowerBoundary());
     }
 
     _interestedDates(...dates) {
@@ -246,6 +274,10 @@ class UserStat {
         }
 
         return s;
+    }
+
+    _vaildDate(date) {
+        return date && date.isValid();
     }
 }
 
@@ -341,7 +373,7 @@ function displayMain() {
             
             _(userStatArray).map(user => {
                 user.projectStats.forEach((v, k) => showPieChart(`${user.key}_${k}`, k, v));
-                showTimelineChart(`timeline_${user.key}`, user.storiesInterested);
+                showTimelineChart(`timeline_${user.key}`, user);
             }).value();
 
             stopProgress();
@@ -352,8 +384,8 @@ function displayMain() {
         `));
 }
 
-function showTimelineChart(id, storyArray) {
-    if (storyArray.length <= 0) {
+function showTimelineChart(id, user) {
+    if (user.resolvedJobs.length <= 0 && user.openJobs.length <= 0) {
         return;
     }
 
@@ -361,38 +393,15 @@ function showTimelineChart(id, storyArray) {
     var chart = new google.visualization.Timeline(container);
     var dataTable = new google.visualization.DataTable();
 
-    dataTable.addColumn({
-        type: 'string',
-        id: 'Summary'
-    });
-    dataTable.addColumn({
-        type: 'date',
-        id: 'Start'
-    });
-    dataTable.addColumn({
-        type: 'date',
-        id: 'Due'
-    });
+    dataTable.addColumn({ type: 'string', id: 'Status' });
+    dataTable.addColumn({ type: 'string', id: 'Summary' });
+    //dataTable.addColumn({ type: 'string', role: 'tooltip' });
+    dataTable.addColumn({ type: 'date', id: 'Start' });
+    dataTable.addColumn({ type: 'date', id: 'Due' });
 
-    const rows = _(storyArray).map(story => {
-        let start = story.startDate;
-        let end = story.dueDate;
+    dataTable.addRows(toJobArray(user.resolvedJobs));
+    dataTable.addRows(toJobArray(user.openJobs));
 
-        if (!vaildDate(start) && vaildDate(end)) {
-            start = moment(end).startOf('week');
-        }
-
-        if (vaildDate(start) && !vaildDate(end)) {
-            end = moment().endOf('week').add(1, 'weeks').add(1, 'hours');
-        }
-        
-        start = maxDate(start, moment().startOf('week').subtract(1, 'weeks'));
-        end = minDate(end, moment().endOf('week').add(1, 'weeks')).endOf('day');
-        
-        return [story.summary, start.toDate(), end.toDate()];
-    }).value();
-
-    dataTable.addRows(rows);
     const chartHeight = (dataTable.getNumberOfRows() + 1) * 41 + 50;
 
     var options = {
@@ -401,10 +410,40 @@ function showTimelineChart(id, storyArray) {
             maxValue: moment().endOf('week').add(1, 'weeks').add(1, 'hours').toDate()
         },
         width: 1350,     
-        height: chartHeight
+        height: chartHeight,
+        avoidOverlappingGridLines: false,
+        timeline: { groupByRowLabel: false, colorByRowLabel: true }
     };
 
     chart.draw(dataTable, options);
+}
+
+function toJobArray(storiesArr) {
+    return _(storiesArr).map((story, i) => {
+        let start = story.startDate;
+        let end = story.dueDate;
+
+        console.log(`${story.key} - ${story.assignee} - ${start} - ${end}`);
+
+        // fixme conditions...
+        if (!vaildDate(start) && vaildDate(end)) {
+            start = moment().startOf('week').subtract(1, 'weeks');
+        }
+
+        if (vaildDate(start) && !vaildDate(end)) {
+            end = moment().endOf('week').add(1, 'weeks').add(1, 'hours');
+        }
+
+        if (!vaildDate(start) && !vaildDate(end)) {
+            start = moment().startOf('week').subtract(1, 'weeks');
+            end = moment().endOf('week').add(1, 'weeks');
+        }
+        
+        start = maxDate(start, moment().startOf('week').subtract(1, 'weeks'));
+        end = minDate(end, moment().endOf('week').add(1, 'weeks')).endOf('day');
+
+        return [`${story.status}`, story.summary, start.toDate(), end.toDate()];
+    }).value();
 }
 
 function vaildDate(date) {
@@ -486,6 +525,10 @@ function onClickRefresh() {
 
 function generateHtml() {
     var html = `        
+        <div id='guide' style='font-size: small; border:1px dashed; padding:10px;'>Timeline 표시 조건 : <br>
+            <li>resolved : status is in (resolved, closed) && resolved date is between (지난주 시작일 and 오늘)</li>
+            <li>open : status is NOT in (resolved, closed) && start date is empty or < 다음주 마지막 일 && due date is (NOT empty and > 지난주 시작일)</li>
+        </div>
         <div id='query_div' hidden><textarea rows="1" style='width: 500px; font: 1em sans-serif;-moz-box-sizing: border-box; box-sizing: border-box; border: 1px solid #999;' id='jql_query_text'/><button onClick='onClickRefresh()'>Refresh</button></div>
         <div id='projects' hidden>projects div</div>
         <div id='components' hidden>component div</div>
