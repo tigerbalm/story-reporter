@@ -1,16 +1,39 @@
 {
-  "name": "story-report",
+  "name": "story-report-webpack",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
-  "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+  "description": "\"# story-reporter\"",
+  "private": true,
+  "dependencies": {
+    "google-charts": "^1.1.0",
+    "lodash": "^4.17.10",
+    "moment": "^2.22.2"
   },
-  "author": "",
-  "license": "ISC",
   "devDependencies": {
     "babel-core": "^6.26.3",
+    "babel-loader": "^7.1.4",
     "babel-preset-env": "^1.7.0",
-    "gulp-babel": "^7.0.1"
-  }
+    "webpack": "^4.12.0",
+    "webpack-dev-server": "^3.1.4",
+    "webpack-cli": "^3.0.8"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "help": "webpack --help",
+    "dev-server-help": "webpack-dev-server --help",
+    "build": "webpack --mode development",
+    "release": "webpack --mode production",
+    "watch": "webpack --watch --mode development",
+    "start": "webpack-dev-server --open --mode development"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tigerbalm/story-reporter.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/tigerbalm/story-reporter/issues"
+  },
+  "homepage": "https://github.com/tigerbalm/story-reporter#readme"
 }
