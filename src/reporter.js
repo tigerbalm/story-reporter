@@ -24,7 +24,7 @@ GoogleCharts.load(() => {
         }
     });
 
-    main();
+    main2();
 }, ['timeline', 'corechart']);
 
 let progressTimer;
@@ -46,11 +46,76 @@ function stopProgress() {
     $("#center_progress_div").hide();
 }
 
+// key, {name: name, total:total}
 let myProjectMap = new Map();
 
-function main() {
-    'use strict';
+class ProjectMap {
+    constructor() {
+        this.map = new Map();
+    }
 
+    add(searchResult) {
+        _(searchResult.stories())
+            .groupBy(s => s.projectKey)
+            .map((issues, key) => this.update(key, issues[0].projectName, issues.length))
+            .value();
+    }
+
+    update(key, name, total) {
+        if (this.map.has(key)) {
+            const value = this.map.get(key);
+            this.map.set(key, {name: name, total: (value.total + total)});    
+            return;
+        }
+
+        this.map.set(key, {name: name, total: total});
+    }
+
+    get(key) {
+        return this.map.get(key);
+    }
+}
+
+function main2() {
+    generateHtml();
+
+    // search 100 issue    
+    const url = new MyUrl(GLOBAL_BASE_URL, GLOBAL_JQL, 500);
+    const projects = new ProjectMap();
+
+    $.get(url.searchUrl, 'xml')
+        .success(xmlDoc => {
+            stopProgress();
+
+            const result = new SearchResult(xmlDoc); 
+
+            projects.add(result);
+            
+            _(result.stories()).chain()
+            .groupBy(story => story.assignee)
+            .map((stories, key) => {
+                return new UserStat(key, stories)
+            }).map(user => {
+                const table = genTable(user);
+                $('#people_table > tbody:first').append(`
+                        <tr>
+                            <td>${user.name}</td>
+                            <td>${table}</td>
+                        </tr>
+                    `);
+                return user;
+            }).map(user => {
+                user.projectStats.forEach((v, k) => showPieChart2(projects.get(k), `${user.key}_${k}`, k, v));
+                showTimelineChart(`timeline_${user.key}`, user);
+            }).value();
+        })
+        .error(err => $("#people_div").html(`
+            <br>Error: ${err.statusText}(${err.status})
+            <br>ResponseText: ${err.responseText}
+        `));
+}
+
+function main() {
     generateHtml();
 
     const deferred = _(GLOBAL_PROJECTS).map(p => $.Deferred()).value();    
@@ -214,6 +279,9 @@ function toJobArray(storiesArr) {
 }
 
 function showPieChart(id, projectKey, statusMap) {
+}
+
+function showPieChart2(projectInfo, id, projectKey, statusMap) {
     console.log("showPieChart: " + projectKey);
 
     let dataArr = [
@@ -221,7 +289,7 @@ function showPieChart(id, projectKey, statusMap) {
     ];
 
     const myJobs = _.sum(Array.from(statusMap.values()));
-    const others = myProjectMap.get(projectKey).total - myJobs;
+    const others = projectInfo.total - myJobs;
     console.log(`${projectKey} - myJobs: ${myJobs}, others: ${others}`);
 
     dataArr.push(['My jobs', myJobs]);
@@ -230,7 +298,7 @@ function showPieChart(id, projectKey, statusMap) {
     const data = google.visualization.arrayToDataTable(dataArr);
     
     var options = {
-        title: `${myProjectMap.get(projectKey).dispName} (${myProjectMap.get(projectKey).total})`,
+        title: `${projectInfo.name} (${projectInfo.total})`,
         width: 400,
         height: 300,
         pieHole: 0.4,
