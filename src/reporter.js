@@ -188,7 +188,7 @@ function toJobArray(storiesArr) {
         let start = story.startDate;
         let end = story.dueDate;
 
-        console.log(`${story.key} - ${story.assignee} - ${start} - ${end}`);
+        console.log(`${story.key} - ${story.assignee} - ${start.format()} - ${end.format()}`);
 
         // fixme conditions...
         if (!MomentUtil.valid(start) && MomentUtil.valid(end)) {
@@ -206,6 +206,8 @@ function toJobArray(storiesArr) {
         
         start = MomentUtil.max(start, moment().startOf('week').subtract(1, 'weeks'));
         end = MomentUtil.min(end, moment().endOf('week').add(1, 'weeks')).endOf('day');
+
+        start = MomentUtil.min(start, end);
 
         return [`${story.status}`, story.summary, start.toDate(), end.toDate()];
     }).value();

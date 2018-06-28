@@ -23,7 +23,7 @@ class UserStat {
         // resolved job - due / resolved is in prev_week
         this.resolvedJobs = _(stories).chain()
                                     .filter(s => s.status === "resolved")
-                                    .filter(s => this._vaildDate(s.dueDate))
+                                    .filter(s => MomentUtil.valid(s.dueDate))
                                     .filter(s => this._isBetween(s.dueDate, moment().startOf("week").subtract(1, "weeks"), moment().endOf("day")))
                                     .value();
 
