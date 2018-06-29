@@ -76,43 +76,61 @@ class ProjectMap {
     }
 }
 
+class UserList {
+    constructor() {
+        this.users = new Map();
+    }
+
+    update(user) {
+        
+    }
+}
+
+let url;
+let projects = new ProjectMap();
+let users = new UserList();
+let issues = {};
+
 function main2() {
     generateHtml();
-
-    // search 100 issue    
-    const url = new MyUrl(GLOBAL_BASE_URL, GLOBAL_JQL, 500);
-    const projects = new ProjectMap();
-
+    
+    url = new MyUrl(GLOBAL_BASE_URL, GLOBAL_JQL, 1000);
+    
+    // first fetch
     $.get(url.searchUrl, 'xml')
         .success(xmlDoc => {
             stopProgress();
 
-            const result = new SearchResult(xmlDoc); 
-
+            const result = new SearchResult(xmlDoc);
+            issues = result.issue();
             projects.add(result);
-            
-            _(result.stories()).chain()
-            .groupBy(story => story.assignee)
-            .map((stories, key) => {
-                return new UserStat(key, stories)
-            }).map(user => {
-                const table = genTable(user);
-                $('#people_table > tbody:first').append(`
-                        <tr>
-                            <td>${user.name}</td>
-                            <td>${table}</td>
-                        </tr>
-                    `);
-                return user;
-            }).map(user => {
-                user.projectStats.forEach((v, k) => showPieChart2(projects.get(k), `${user.key}_${k}`, k, v));
-                showTimelineChart(`timeline_${user.key}`, user);
-            }).value();
+
+            updateGraph(result.stories());
         })
         .error(err => $("#people_div").html(`
             <br>Error: ${err.statusText}(${err.status})
             <br>ResponseText: ${err.responseText}
         `));
+}
+
+function updateGraph(items) {
+    _(items)
+    .groupBy(story => story.assignee)
+    .map((stories, key) => {
+        return new UserStat(key, stories);
+    }).map(user => {
+        const table = genTable(user);
+        $('#people_table > tbody:first').append(`
+                <tr>
+                    <td>${user.name}</td>
+                    <td>${table}</td>
+                </tr>
+            `);
+        return user;
+    }).map(user => {
+        user.projectStats.forEach((v, k) => showPieChart2(projects.get(k), `${user.key}_${k}`, k, v));
+        showTimelineChart(`timeline_${user.key}`, user);
+    }).value();
 }
 
 function main() {
