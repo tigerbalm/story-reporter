@@ -10,17 +10,27 @@ const Constants = {
 };
 
 class MyUrl {
-    constructor(base, jql, max, fields) {
+    constructor(base, jql, max, startAt, fields) {
         this.baseUrl = this._baseUrl(base);
         this.jqlQuery = this._buildJql(jql);
         this.preferredFields = this._buildFields(fields);
         this.tempMax = max || 1000;
+        this.startAt = startAt || 0;
         this.searchUrl = this._buildSearchUrl();
 
         console.log("searchUrl: " + this.searchUrl);
     }
 
-    _baseUrl(base) {        
+    setStartAt(start) {
+        this.startAt = start;
+        this.searchUrl = this._buildSearchUrl();
+    }
+
+    _isTestMode() {
+        return location.href.startsWith("http://localhost");
+    }
+    
+    _baseUrl(base) {
         if (base) {
             console.log("found base url: " + base);
             return base;
@@ -57,8 +67,13 @@ class MyUrl {
     _buildSearchUrl() {
         const params = {
             jqlQuery: this.jqlQuery,
-            tempMax: this.tempMax
+            tempMax: this.tempMax,
+            "page/start": this.startAt
         };
+                
+        if (this._isTestMode()) {
+            this.baseUrl = `http://localhost:8080/xml/search-result-${this.startAt}-${this.startAt + 500}.xml`;            
+        }
 
         return this.baseUrl + "?" + $.param(params) + "&" + this.preferredFields;
     }

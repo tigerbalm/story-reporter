@@ -12,12 +12,12 @@ class UserStat {
             .map((group, key) => {
                 const groupByStatus = _(group).chain().groupBy(s => s.status)
                     .value();
-                const statusMap = new Map();
+                // const statusMap = new Map();
 
-                _.forIn(groupByStatus, (v, k) =>
-                    statusMap.set(k, v.length));
-
-                this.projectStats.set(key, statusMap);
+                // _.forIn(groupByStatus, (v, k) =>
+                //     statusMap.set(k, v.length));
+ 
+                this.projectStats.set(key, groupByStatus);
             }).value();
 
         // resolved job - due / resolved is in prev_week

@@ -5,6 +5,9 @@
 // 8. error 처리 (search query 에서 component 를 넣을지 말지.. 별도로도 처리가 가능한데..)
 // 9. timeline graph 다시 그리기
 
+// 1. 500개 이상 data 처리
+// 2. interaction
+
 import MomentUtil from './moment_util.js';
 import MyUrl from './url.js';
 import UserStat from './user_stat.js';
@@ -88,29 +91,71 @@ class UserList {
 
 let url;
 let projects = new ProjectMap();
-let users = new UserList();
+let stories = [];
 let issues = {};
 
 function main2() {
     generateHtml();
     
-    url = new MyUrl(GLOBAL_BASE_URL, GLOBAL_JQL, 1000);
-    
-    // first fetch
-    $.get(url.searchUrl, 'xml')
-        .success(xmlDoc => {
-            stopProgress();
+    url = new MyUrl(GLOBAL_BASE_URL, GLOBAL_JQL, 1);
+    console.log("first fetch : " + url.searchUrl);
 
-            const result = new SearchResult(xmlDoc);
-            issues = result.issue();
-            projects.add(result);
+    $.get(url.searchUrl, 'xml').success(xmlDoc => {
+        fetchData(xmlDoc);        
+    })
+    .error(err => $("#people_div").html(`
+        <br>Error: ${err.statusText}(${err.status})
+        <br>ResponseText: ${err.responseText}
+    `));    
+}
 
-            updateGraph(result.stories());
-        })
-        .error(err => $("#people_div").html(`
+function fetchData(xmlDoc) {
+    const result = new SearchResult(xmlDoc);
+    const issues = result.issue();
+
+    const loop = Math.ceil((issues.total) / 500);
+    console.log(`total: ${issues.total}, loop: ${loop}`);
+
+    const deferred = _.range(0, loop).map(p => $.Deferred());
+ 
+    $.when.apply($, deferred).done(() => {
+            const docs = arguments;
+            _(docs).map(d => new SearchResult(d)).map(result => {
+                projects.add(result);
+                stories = stories.concat(result.stories());
+            }).value();
+
+            updateGraph(stories);
+        }).fail(err => {
+            $("#people_div").html(`
             <br>Error: ${err.statusText}(${err.status})
             <br>ResponseText: ${err.responseText}
-        `));
+            `);
+        }).always(() => {
+            stopProgress();
+        });
+
+    const url2 = new MyUrl(GLOBAL_BASE_URL, GLOBAL_JQL, 500);
+    _.range(0, loop).forEach((x, i) => {
+        url2.setStartAt(issues.end * x);
+            console.log("url: " + url2.searchUrl);
+
+            $.get(url2.searchUrl, 'xml').success(xmlDoc => {                        
+                deferred[i].resolve(xmlDoc);
+            })
+            .error(err => {
+                $("#people_div").html(`
+                <br>Error: ${err.statusText}(${err.status})
+                <br>ResponseText: ${err.responseText}
+                `)
+
+                deferred[i].reject();
+            });
+
+            console.log("after $.get()");
+        });
+
+        console.log("end of range");
 }
 
 function updateGraph(items) {
@@ -119,118 +164,25 @@ function updateGraph(items) {
     .map((stories, key) => {
         return new UserStat(key, stories);
     }).map(user => {
-        const table = genTable(user);
-        $('#people_table > tbody:first').append(`
-                <tr>
-                    <td>${user.name}</td>
-                    <td>${table}</td>
-                </tr>
-            `);
+        if ($(`#worktable_${user.key}`).length <= 0) {
+            const table = genTable(user);
+            $('#people_table > tbody:first').append(`
+                    <tr>
+                        <td style='border-bottom: 1px solid #555;'>${user.name}</td>
+                        <td style='border-bottom: 1px solid #555;'>${table}</td>
+                    </tr>
+                `);
+        }
+        
         return user;
-    }).map(user => {
-        user.projectStats.forEach((v, k) => showPieChart2(projects.get(k), `${user.key}_${k}`, k, v));
+    }).map(user => {        
+        user.projectStats.forEach((v, k) => showPieChart2(projects.get(k), user.key, k, v));
         showTimelineChart(`timeline_${user.key}`, user);
     }).value();
 }
 
-function main() {
-    generateHtml();
 
-    const deferred = _(GLOBAL_PROJECTS).map(p => $.Deferred()).value();    
-
-    $.when.apply($, deferred).then(
-        function success() {
-            const docs = arguments;
-            _(docs).map(d => new SearchResult(d)).map(r => {
-                const total = r.issue().total;
-                const key = r.stories()[0].projectKey;
-                const dispName = r.stories()[0].projectName;
-
-                log(`Build project map : ${key}, ${dispName}, ${total}`);
-
-                myProjectMap.set(key, {total: total, dispName: dispName});
-            }).value();
-
-            displayMain();
-        },
-
-        function failed(results) {
-        }
-    );
-
-    _(GLOBAL_PROJECTS).map((p, i) => {
-        let baseUrl = GLOBAL_BASE_URL;
-        if (location.hostname.startsWith("localhost")) {
-            baseUrl = `http://localhost:8080/xml/search-result-prj-${p}.xml`;
-        }
-
-        let components = "";
-        if (typeof GLOBAL_COMPONENTS !== 'undefined' && GLOBAL_COMPONENTS) {
-            const compString = _(GLOBAL_COMPONENTS[i]).map(c => `"${c}"`).value().join(',');
-            components = `component in (${compString})`;
-        }
-        
-        const query = `project = ${p} AND ${components}`;
-
-        return new MyUrl(baseUrl, query, 1, 'project').searchUrl;
-    }).map((q, i) => {
-        console.log(`${i}: ` + q);
-
-        $.get(q, 'xml')
-            .success(xmldoc => {
-                deferred[i].resolve(xmldoc);
-            })
-            .fail(e => {
-                log("Error: get project data - " + GLOBAL_PROJECTS[i]);
-                deferred[i].reject();
-            });
-    }).value();
-}
-
-function displayMain() {
-    const url = new MyUrl(GLOBAL_BASE_URL, GLOBAL_JQL);
-    $('#jql_query_text').val(url.jqlQuery);
-
-    $.get(url.searchUrl, 'xml')
-        .success(xmlDoc => {
-            const result = new SearchResult(xmlDoc);
-
-            addLinks("projects", result.projects(), onProjectClick);
-            addLinks("components", result.components(), onComponentClick);
-
-            const userStatArray = _(result.stories()).chain()
-                .groupBy(story => story.assignee)
-                .map((stories, key) => {
-                    return new UserStat(key, stories)
-                })
-                .value();
-
-            _(userStatArray).map(user => {
-                return {
-                    name: user.name,
-                    table: genTable(user)
-                };
-            }).map(pair => {
-                $('#people_table > tbody:first').append(`
-                        <tr>
-                            <td>${pair.name}</td>
-                            <td>${pair.table}</td>
-                        </tr>
-                    `);
-            }).value();
-            
-            _(userStatArray).map(user => {
-                user.projectStats.forEach((v, k) => showPieChart(`${user.key}_${k}`, k, v));
-                showTimelineChart(`timeline_${user.key}`, user);
-            }).value();
-
-            stopProgress();
-        })
-        .error(err => $("#people_div").html(`
-            <br>Error: ${err.statusText}(${err.status})
-            <br>ResponseText: ${err.responseText}
-        `));
-}
+let timelineMap = new Map();
 
 function showTimelineChart(id, user) {
     if (user.resolvedJobs.length <= 0 && user.openJobs.length <= 0) {
@@ -241,11 +193,17 @@ function showTimelineChart(id, user) {
     var chart = new google.visualization.Timeline(container);
     var dataTable = new google.visualization.DataTable();
 
-    dataTable.addColumn({ type: 'string', id: 'Status' });
-    dataTable.addColumn({ type: 'string', id: 'Summary' });
-    //dataTable.addColumn({ type: 'string', role: 'tooltip' });
-    dataTable.addColumn({ type: 'date', id: 'Start' });
-    dataTable.addColumn({ type: 'date', id: 'Due' });
+    const cachedChart = timelineMap.get(id);
+    if (cachedChart) {
+        chart = cachedChart.chart;
+        dataTable = cachedChart.dataTable;
+    } else {
+        dataTable.addColumn({ type: 'string', id: 'Status' });
+        dataTable.addColumn({ type: 'string', id: 'Summary' });
+        //dataTable.addColumn({ type: 'string', role: 'tooltip' });
+        dataTable.addColumn({ type: 'date', id: 'Start' });
+        dataTable.addColumn({ type: 'date', id: 'Due' });
+    }
 
     dataTable.addRows(toJobArray(user.resolvedJobs));
     dataTable.addRows(toJobArray(user.openJobs));
@@ -264,6 +222,8 @@ function showTimelineChart(id, user) {
     };
 
     chart.draw(dataTable, options);
+
+    timelineMap.set(id, {chart: chart, dataTable: dataTable});
 }
 
 function toJobArray(storiesArr) {
@@ -296,24 +256,40 @@ function toJobArray(storiesArr) {
     }).value();
 }
 
-function showPieChart(id, projectKey, statusMap) {
-}
+let pieChartMap = new Map();
 
-function showPieChart2(projectInfo, id, projectKey, statusMap) {
-    console.log("showPieChart: " + projectKey);
+function showPieChart2(projectInfo, userKey, projectKey, statusMap) {
+    const id = `${userKey}_${projectKey}`;
 
-    let dataArr = [
-        ['Who', 'Jobs']
-    ];
+    console.log("showPieChart: " + projectKey + ", id: " + id);
+    
+    if ($(`#pie_${userKey} > ${id}`).length <= 0) {
+        $(`#pie_${userKey}`).append(`<div id='${id}' style='display: inline-table;'></div>`);
+    }
 
-    const myJobs = _.sum(Array.from(statusMap.values()));
+    var chart = new google.visualization.PieChart(document.getElementById(id));
+
+    const cachedPie = pieChartMap.get(id);
+    let cachedMyJobs = 0;
+    if (cachedPie) {
+        chart = cachedPie.chart;
+        cachedMyJobs = cachedPie.myJobs;
+    }
+    
+    const myJobs = _.sum(Array.from(_.values(statusMap).map(s => s.length))) + cachedMyJobs;
     const others = projectInfo.total - myJobs;
     console.log(`${projectKey} - myJobs: ${myJobs}, others: ${others}`);
 
-    dataArr.push(['My jobs', myJobs]);
-    dataArr.push(['Others', others]);
+    const tooltip = _.chain(_.values(statusMap)).flatMap(s => s).map(s => s.summary).join("\n").value();
 
-    const data = google.visualization.arrayToDataTable(dataArr);
+    var data = new google.visualization.DataTable();
+    data.addColumn('string', 'Who');
+    data.addColumn('number', 'Jobs');
+    data.addColumn({type: 'string', role: 'tooltip'});
+    data.addRows([
+        ['My jobs', myJobs, ""],
+        ['Others', others, ""]
+    ]);
     
     var options = {
         title: `${projectInfo.name} (${projectInfo.total})`,
@@ -325,26 +301,48 @@ function showPieChart2(projectInfo, id, projectKey, statusMap) {
             0: {offset: 0.2, color: '#9966ff'},
             1: {color: '#33cccc'}            
         },
+        tooltip: { trigger: 'selection' }
     };
 
-    var chart = new google.visualization.PieChart(document.getElementById(id));
+    function selectHandler() {
+        // var selectedItem = chart.getSelection()[0];
+        // if (selectedItem) {
+        //   var value = data.getValue(selectedItem.row, selectedItem.column);
+        //   //alert('The user selected ' + value);
+        // }
+      }
+
+      google.visualization.events.addListener(chart, 'select', selectHandler);
+
+    const mlmKeys = _.chain(_.values(statusMap)).flatMap(s => s).map(s => s.key).join(",").value();
+    chart.setAction({
+        id: 'sample',
+        text: 'Show issues',
+        action: function() {
+          const selection = chart.getSelection();
+          switch (selection[0].row) {
+            case 0: 
+                window.open("http://mlm.lge.com/di/secure/IssueNavigator.jspa?reset=true?reset=true&jqlQuery=key in(" + mlmKeys + ")", '_blank');
+                break;
+            case 1: 
+                //alert('Feynman Lectures on Physics'); 
+                break;            
+          }
+        }
+      });
 
     chart.draw(data, options);
+
+    pieChartMap.set(id, {chart: chart, myJobs: myJobs});
 }
 
-function genTable(user) {
-    const prjCount = user.projectStats.size;
-    let prjTds = "";
-    user.projectStats.forEach((v, k) => prjTds += `<td id='${user.key}_${k}'>${k} - ${v}</td>`);
-
-    console.log("prjTds: " + prjTds);
-
-    return `<table style='border: 1px solid black;' width=100% id='worktable_${user.key}'>                
-                <tr>                    
-                    ${prjTds}
+function genTable(user) {    
+    return `<table width=100% id='worktable_${user.key}'>
+                <tr>
+                    <div id='pie_${user.key}'></div>
                 </tr>
                 <tr>
-                    <td colspan='${prjCount}' id='timeline_${user.key}'></td>
+                    <td id='timeline_${user.key}'></td>
                 </tr>
             </table>
             `;
@@ -379,7 +377,7 @@ function generateHtml() {
         <div id='issues'></div>
         <div id='people_div'>
             <table id='people_table' width=100%>
-                <tbody id='first'>                
+                <tbody id='first'>
                 </tbody>
             </table>
         </div>

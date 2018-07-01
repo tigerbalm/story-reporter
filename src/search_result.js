@@ -17,9 +17,9 @@ class SearchResult {
     }
 
     _parseIssueCount(issueNode) {
-        this._issue.total = issueNode.attr("total");
-        this._issue.start = issueNode.attr("start");
-        this._issue.end = issueNode.attr("end");
+        this._issue.total = parseInt(issueNode.attr("total"));
+        this._issue.start = parseInt(issueNode.attr("start"));
+        this._issue.end = parseInt(issueNode.attr("end"));
     }
 
     _parseItems(xmlitems) {
