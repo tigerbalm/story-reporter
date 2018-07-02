@@ -11,7 +11,7 @@ class SearchResult {
 
     _parseXmlDoc(xml) {
         const $xml = $(xml);
-
+        this._link = $(xml).find("channel > link").text();
         this._parseIssueCount($xml.find("issue"));
         this._parseItems($xml.find("item"));
     }
@@ -54,6 +54,10 @@ class SearchResult {
 
     issue() {
         return this._issue;
+    }
+
+    link() {
+        return this._link;
     }
 }
 

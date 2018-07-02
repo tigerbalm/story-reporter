@@ -6,8 +6,11 @@ class UserStat {
     constructor(name, stories) {
         this.name = name;
         this.key = name.replace(/[^A-Za-z]/g, "");
+        
+        this.username = stories[0].username;
 
         this.projectStats = new Map();
+        
         _(stories).chain().groupBy(s => s.projectKey)
             .map((group, key) => {
                 const groupByStatus = _(group).chain().groupBy(s => s.status)
@@ -17,7 +20,7 @@ class UserStat {
                 // _.forIn(groupByStatus, (v, k) =>
                 //     statusMap.set(k, v.length));
  
-                this.projectStats.set(key, groupByStatus);
+                this.projectStats.set(key, groupByStatus);                
             }).value();
 
         // resolved job - due / resolved is in prev_week

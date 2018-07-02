@@ -68,7 +68,7 @@ class MyUrl {
         const params = {
             jqlQuery: this.jqlQuery,
             tempMax: this.tempMax,
-            "page/start": this.startAt
+            "pager/start": this.startAt
         };
                 
         if (this._isTestMode()) {

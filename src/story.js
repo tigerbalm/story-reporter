@@ -10,6 +10,7 @@ class Story {
         this.type = $item.find('type').text() || "";
         this.status = this._status($item.find('status').text() || "");
         this.assignee = $item.find('assignee').text() || "";
+        this.username = $item.find('assignee').attr('username') || "";
         this.summary = $item.find('summary').text() || "";
         this.component = $item.find('component').text() || "";
         this.link = $item.find('link').text() || "";

@@ -8,18 +8,20 @@
 // 1. 500개 이상 data 처리
 // 2. interaction
 
+import css from './base.css';
 import MomentUtil from './moment_util.js';
 import MyUrl from './url.js';
 import UserStat from './user_stat.js';
 import SearchResult from './search_result.js';
-import 'lodash';
+import { range, map } from 'lodash';
 import moment from 'moment';
-import {GoogleCharts} from 'google-charts';
+import { GoogleCharts } from 'google-charts';
+import ProjectMap from './project_map.js';
 
 GoogleCharts.load(() => {
     console.log("google chart loaded");
-    
-    startProgress();    
+
+    startProgress();
 
     $.ajaxSetup({
         xhrFields: {
@@ -31,6 +33,12 @@ GoogleCharts.load(() => {
 }, ['timeline', 'corechart']);
 
 let progressTimer;
+let timelineMap = new Map();
+let pieChartMap = new Map();
+let projects = new ProjectMap();
+let stories = [];
+const BUCKET_SIZE = 500;
+
 function startProgress() {
     progressTimer = setInterval(() => {
         //const text = $("#center_progress_div").html();
@@ -49,141 +57,208 @@ function stopProgress() {
     $("#center_progress_div").hide();
 }
 
-// key, {name: name, total:total}
-let myProjectMap = new Map();
-
-class ProjectMap {
-    constructor() {
-        this.map = new Map();
-    }
-
-    add(searchResult) {
-        _(searchResult.stories())
-            .groupBy(s => s.projectKey)
-            .map((issues, key) => this.update(key, issues[0].projectName, issues.length))
-            .value();
-    }
-
-    update(key, name, total) {
-        if (this.map.has(key)) {
-            const value = this.map.get(key);
-            this.map.set(key, {name: name, total: (value.total + total)});    
-            return;
-        }
-
-        this.map.set(key, {name: name, total: total});
-    }
-
-    get(key) {
-        return this.map.get(key);
-    }
-}
-
-class UserList {
-    constructor() {
-        this.users = new Map();
-    }
-
-    update(user) {
-        
-    }
-}
-
-let projects = new ProjectMap();
-let stories = [];
-let issues = {};
-
 function main2() {
     generateHtml();
-    
+
     const url = new MyUrl(GLOBAL_BASE_URL, GLOBAL_JQL, 1);
     console.log("first fetch : " + url.searchUrl);
 
-    $.get(url.searchUrl, 'xml').success(xmlDoc => {
-        fetchData(xmlDoc);        
-    })
-    .error(err => $("#people_div").html(`
-        <br>Error: ${err.statusText}(${err.status})
-        <br>ResponseText: ${err.responseText}
-    `));    
+    $.get(url.searchUrl, 'xml')
+        .success(xmlDoc => fetchData(xmlDoc))
+        .error(err => {
+            $("#people_div").html(`
+                <br>Error: ${err.statusText}(${err.status})
+                <br>ResponseText: ${err.responseText}
+            `);
+        });
 }
+
+let channelLink;
 
 function fetchData(xmlDoc2) {
     const result2 = new SearchResult(xmlDoc2);
     const issues = result2.issue();
+    
+    channelLink = result2.link();
+
+    $("#link_to_search_result").html(`<a href='${channelLink}' target='_blank'>MLM에서 전체 검색 결과 보기</a>`);
 
     const loop = Math.ceil((issues.total) / 500);
     console.log(`total: ${issues.total}, loop: ${loop}`);
 
     const deferred = _.range(0, loop).map(p => $.Deferred());
- 
-    $.when.apply($, deferred).done((...args) => {
-            const docs = args;
-            console.log("docs.length= " + docs.length);
 
-            _(docs).map(d => new SearchResult(d)).map(result => {
+    $.when.apply($, deferred).done((...args) => {
+        const docs = args;
+
+        _(docs).map(d => new SearchResult(d))
+            .map(result => {
                 projects.add(result);
                 stories = stories.concat(result.stories());
             }).value();
 
-            updateGraph(stories);
-        }).fail(err => {
-            $("#people_div").html(`
+        updateGraph(stories);
+    }).fail(err => {
+        $("#people_div").html(`
             <br>Error: ${err.statusText}(${err.status})
             <br>ResponseText: ${err.responseText}
             `);
-        }).always(() => {
-            stopProgress();
-        });
+    }).always(() => {
+        stopProgress();
+    });
 
-    const url2 = new MyUrl(GLOBAL_BASE_URL, GLOBAL_JQL, 500);
+    const url2 = new MyUrl(GLOBAL_BASE_URL, GLOBAL_JQL, BUCKET_SIZE);
     _.range(0, loop).forEach((x, i) => {
-        url2.setStartAt(issues.end * x);
-            console.log("url: " + url2.searchUrl);
+        url2.setStartAt(BUCKET_SIZE * x);
+        console.log("url2: " + url2.searchUrl);
 
-            $.get(url2.searchUrl, 'xml').success(xmlDoc => {
+        $.get(url2.searchUrl, 'xml')
+            .success(xmlDoc => {
                 deferred[i].resolve(xmlDoc);
-            })
-            .error(err => {
+            }).error(err => {
                 $("#people_div").html(`
-                <br>Error: ${err.statusText}(${err.status})
-                <br>ResponseText: ${err.responseText}
-                `)
+                    <br>Error: ${err.statusText}(${err.status})
+                    <br>ResponseText: ${err.responseText}
+                `);
 
                 deferred[i].reject();
             });
-
-            console.log("after $.get()");
-        });
-
-        console.log("end of range");
+    });
 }
 
 function updateGraph(items) {
     _(items)
-    .groupBy(story => story.assignee)
-    .map((stories, key) => {
-        return new UserStat(key, stories);
-    }).map(user => {
-        if ($(`#worktable_${user.key}`).length <= 0) {
-            const table = genTable(user);
-            $('#people_table > tbody:first').append(`
+        .groupBy(story => story.assignee)
+        .map((stories, key) => {
+            return new UserStat(key, stories);
+        }).map(user => {
+            if ($(`#worktable_${user.key}`).length <= 0) {
+                const table = genTable(user);
+                $('#people_table > tbody:first').append(`
                     <tr>
-                        <td style='border-bottom: 1px solid #555;'>${user.name}</td>
-                        <td style='border-bottom: 1px solid #555;'>${table}</td>
+                        <td class='name'>${user.name}</td>
+                        <td>${table}</td>
                     </tr>
                 `);
-        }
-        
-        return user;
-    }).map(user => {        
-        user.projectStats.forEach((v, k) => showPieChart2(projects.get(k), user.key, k, v));
-        showTimelineChart(`timeline_${user.key}`, user);
-    }).value();
+            }
+
+            return user;
+        }).map(user => {
+            user.projectStats.forEach((stat, proj_key) => showPieChart2(projects.get(proj_key), user, proj_key, stat));
+            showTimelineChart(`timeline_${user.key}`, user);
+        }).value();
 }
 
+function genTable(user) {
+    return `
+        <div id='worktable_${user.key}' class='round'>
+            <div id='pie_${user.key}'></div>
+            <div id='timeline_${user.key}'></div>
+        </div>
+    `;
+}
 
-let timelineMap = new Map();
+function showPieChart2(projectInfo, user, projectKey, statusMap) {
+    const userKey = user.key;
+    const id = `${userKey}_${projectKey}`;
+
+    console.log("showPieChart: " + projectKey + ", id: " + id);
+
+    if ($(`#pie_${userKey} > ${id}`).length <= 0) {
+        $(`#pie_${userKey}`).append(`<div id='${id}' style='display: inline-table;'></div>`);
+    }
+
+    var chart = new google.visualization.PieChart(document.getElementById(id));
+
+    const cachedPie = pieChartMap.get(id);
+    let cachedMyJobs = 0;
+    if (cachedPie) {
+        chart = cachedPie.chart;
+        cachedMyJobs = cachedPie.myJobs;
+    }
+
+    const myJobs = _.sum(Array.from(_.values(statusMap).map(s => s.length))) + cachedMyJobs;
+    const others = projectInfo.total - myJobs;
+    console.log(`${projectKey} - myJobs: ${myJobs}, others: ${others}`);
+
+    const tooltip = _.chain(_.values(statusMap)).flatMap(s => s).map(s => s.summary).join("\n").value();
+
+    var data = new google.visualization.DataTable();
+    data.addColumn('string', 'Who');
+    data.addColumn('number', 'Jobs');
+    data.addColumn({
+        type: 'string',
+        role: 'tooltip'
+    });
+    data.addRows([
+        ['My jobs', myJobs, ""],
+        ['Others', others, ""]
+    ]);
+
+    var options = {
+        title: `${projectInfo.name} (${projectInfo.total})`,
+        width: 400,
+        height: 300,
+        pieHole: 0.4,
+        pieSliceText: 'value',
+        slices: {
+            0: {
+                offset: 0.2,
+                color: '#9966ff'
+            },
+            1: {
+                color: '#33cccc'
+            }
+        },
+        // tooltip: {
+        //     trigger: 'selection'
+        // },
+        backgroundColor: { fill:'transparent' }
+    };
+
+    function selectHandler() {
+        var selectedItem = chart.getSelection()[0];
+        if (selectedItem) {
+        //   var value = data.getValue(selectedItem.row, selectedItem.column);
+        //   //alert('The user selected ' + value);
+        // "http://mlm.lge.com/di/secure/IssueNavigator.jspa?reset=true&jqlQuery=%28project+%3D+OSA+AND+issuetype+in+%28subTaskIssueTypes%28%29%2C+Bug%2C+Request%29+AND+%28component+in+%28SPRINT%2C+VERIZON%29+OR+labels+%3D+WBS%29%29+or+%28component+%3D+WBS+AND+project+%3D+THREERDP+AND+assignee+in+%28youngmi.lee%2C+junghyub.lee%2C+sungjae.jun%2C+junghyun.cho%2C+jaehee.jung%29%29+AND+created+%3E%3D+2018-01-01+AND+created+%3C%3D+2018-12-31+AND+assignee+not+in+%28unassigned%29"
+        // TO BE : (assignee = 'jaehee.jung' AND project = 'THREERDP') AND ((project = OSA AND issuetype in (subTaskIssueTypes(), Bug, Request) AND (component in (SPRINT, VERIZON) OR labels = WBS)) or (component = WBS AND project = THREERDP AND assignee in (youngmi.lee, junghyub.lee, sungjae.jun, junghyun.cho, jaehee.jung)) AND created >= 2018-01-01 AND created <= 2018-12-31 AND assignee not in (unassigned))
+            const replacement = encodeURIComponent(`assignee ='${user.username}' AND project ='${projectKey}'`);
+            const myLink = channelLink.replace('jqlQuery=', `jqlQuery=(${replacement})%20AND%20`);
+            
+            console.log("channelLink: " + channelLink);
+            console.log("myLink: " + myLink);
+            
+            window.open(myLink, '_blank');
+        }
+    }
+
+    google.visualization.events.addListener(chart, 'select', selectHandler);
+
+    const mlmKeys = _.chain(_.values(statusMap)).flatMap(s => s).map(s => s.key).join(",").value();
+    chart.setAction({
+        id: 'sample',
+        text: 'Show issues',
+        action: function () {
+            const selection = chart.getSelection();
+            switch (selection[0].row) {
+                case 0:
+                    window.open("http://mlm.lge.com/di/secure/IssueNavigator.jspa?reset=true?reset=true&jqlQuery=key in(" + mlmKeys + ")", '_blank');
+                    break;
+                case 1:
+                    //alert('Feynman Lectures on Physics'); 
+                    break;
+            }
+        }
+    });
+
+    chart.draw(data, options);
+
+    pieChartMap.set(id, {
+        chart: chart,
+        myJobs: myJobs
+    });
+}
 
 function showTimelineChart(id, user) {
     if (user.resolvedJobs.length <= 0 && user.openJobs.length <= 0) {
@@ -199,11 +274,23 @@ function showTimelineChart(id, user) {
         chart = cachedChart.chart;
         dataTable = cachedChart.dataTable;
     } else {
-        dataTable.addColumn({ type: 'string', id: 'Status' });
-        dataTable.addColumn({ type: 'string', id: 'Summary' });
+        dataTable.addColumn({
+            type: 'string',
+            id: 'Status'
+        });
+        dataTable.addColumn({
+            type: 'string',
+            id: 'Summary'
+        });
         //dataTable.addColumn({ type: 'string', role: 'tooltip' });
-        dataTable.addColumn({ type: 'date', id: 'Start' });
-        dataTable.addColumn({ type: 'date', id: 'Due' });
+        dataTable.addColumn({
+            type: 'date',
+            id: 'Start'
+        });
+        dataTable.addColumn({
+            type: 'date',
+            id: 'Due'
+        });
     }
 
     dataTable.addRows(toJobArray(user.resolvedJobs));
@@ -212,19 +299,26 @@ function showTimelineChart(id, user) {
     const chartHeight = (dataTable.getNumberOfRows() + 1) * 41 + 50;
 
     var options = {
-        hAxis: {            
+        hAxis: {
             minValue: moment().startOf('week').subtract(1, 'weeks').toDate(),
             maxValue: moment().endOf('week').add(1, 'weeks').add(1, 'hours').toDate()
         },
-        width: 1350,     
+        width: 1350,
         height: chartHeight,
         avoidOverlappingGridLines: false,
-        timeline: { groupByRowLabel: false, colorByRowLabel: true }
+        timeline: {
+            groupByRowLabel: false,
+            colorByRowLabel: true
+        },
+        backgroundColor: { fill:'transparent' }
     };
 
     chart.draw(dataTable, options);
 
-    timelineMap.set(id, {chart: chart, dataTable: dataTable});
+    timelineMap.set(id, {
+        chart: chart,
+        dataTable: dataTable
+    });
 }
 
 function toJobArray(storiesArr) {
@@ -247,7 +341,7 @@ function toJobArray(storiesArr) {
             start = moment().startOf('week').subtract(1, 'weeks');
             end = moment().endOf('week').add(1, 'weeks');
         }
-        
+
         start = MomentUtil.max(start, moment().startOf('week').subtract(1, 'weeks'));
         end = MomentUtil.min(end, moment().endOf('week').add(1, 'weeks')).endOf('day');
 
@@ -255,98 +349,6 @@ function toJobArray(storiesArr) {
 
         return [`${story.status}`, story.summary, start.toDate(), end.toDate()];
     }).value();
-}
-
-let pieChartMap = new Map();
-
-function showPieChart2(projectInfo, userKey, projectKey, statusMap) {
-    const id = `${userKey}_${projectKey}`;
-
-    console.log("showPieChart: " + projectKey + ", id: " + id);
-    
-    if ($(`#pie_${userKey} > ${id}`).length <= 0) {
-        $(`#pie_${userKey}`).append(`<div id='${id}' style='display: inline-table;'></div>`);
-    }
-
-    var chart = new google.visualization.PieChart(document.getElementById(id));
-
-    const cachedPie = pieChartMap.get(id);
-    let cachedMyJobs = 0;
-    if (cachedPie) {
-        chart = cachedPie.chart;
-        cachedMyJobs = cachedPie.myJobs;
-    }
-    
-    const myJobs = _.sum(Array.from(_.values(statusMap).map(s => s.length))) + cachedMyJobs;
-    const others = projectInfo.total - myJobs;
-    console.log(`${projectKey} - myJobs: ${myJobs}, others: ${others}`);
-
-    const tooltip = _.chain(_.values(statusMap)).flatMap(s => s).map(s => s.summary).join("\n").value();
-
-    var data = new google.visualization.DataTable();
-    data.addColumn('string', 'Who');
-    data.addColumn('number', 'Jobs');
-    data.addColumn({type: 'string', role: 'tooltip'});
-    data.addRows([
-        ['My jobs', myJobs, ""],
-        ['Others', others, ""]
-    ]);
-    
-    var options = {
-        title: `${projectInfo.name} (${projectInfo.total})`,
-        width: 400,
-        height: 300,
-        pieHole: 0.4,
-        pieSliceText: 'value',
-        slices: {  
-            0: {offset: 0.2, color: '#9966ff'},
-            1: {color: '#33cccc'}            
-        },
-        tooltip: { trigger: 'selection' }
-    };
-
-    function selectHandler() {
-        // var selectedItem = chart.getSelection()[0];
-        // if (selectedItem) {
-        //   var value = data.getValue(selectedItem.row, selectedItem.column);
-        //   //alert('The user selected ' + value);
-        // }
-      }
-
-      google.visualization.events.addListener(chart, 'select', selectHandler);
-
-    const mlmKeys = _.chain(_.values(statusMap)).flatMap(s => s).map(s => s.key).join(",").value();
-    chart.setAction({
-        id: 'sample',
-        text: 'Show issues',
-        action: function() {
-          const selection = chart.getSelection();
-          switch (selection[0].row) {
-            case 0: 
-                window.open("http://mlm.lge.com/di/secure/IssueNavigator.jspa?reset=true?reset=true&jqlQuery=key in(" + mlmKeys + ")", '_blank');
-                break;
-            case 1: 
-                //alert('Feynman Lectures on Physics'); 
-                break;            
-          }
-        }
-      });
-
-    chart.draw(data, options);
-
-    pieChartMap.set(id, {chart: chart, myJobs: myJobs});
-}
-
-function genTable(user) {    
-    return `<table width=100% id='worktable_${user.key}'>
-                <tr>
-                    <div id='pie_${user.key}'></div>
-                </tr>
-                <tr>
-                    <td id='timeline_${user.key}'></td>
-                </tr>
-            </table>
-            `;
 }
 
 function onProjectClick(project) {
@@ -369,7 +371,7 @@ function generateHtml() {
             <li>resolved : status is in (resolved, closed) && resolved date is between (지난주 시작일 and 오늘)</li>
             <li>open : status is NOT in (resolved, closed) && start date is empty or < 다음주 마지막 일 && due date is (NOT empty and > 지난주 시작일)</li>
         </div>
-        <div id='query_div' hidden><textarea rows="1" style='width: 500px; font: 1em sans-serif;-moz-box-sizing: border-box; box-sizing: border-box; border: 1px solid #999;' id='jql_query_text'/><button onClick='onClickRefresh()'>Refresh</button></div>
+        <div id='link_to_search_result'></div>
         <div id='projects' hidden>projects div</div>
         <div id='components' hidden>component div</div>
         <div id='center_progress_div'>
@@ -394,8 +396,8 @@ function addLinks(id, items, onClick) {
     $(`#${id}`).html(html);
 }
 
-function log(text) {    
+function log(text) {
     console.log(text);
-    
+
     //$('#log_message').html(text.replace('Error', '<span style="color:red; font-weight:bold;">Error</span>'));
 }
