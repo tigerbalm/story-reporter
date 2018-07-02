@@ -23,6 +23,8 @@ class SearchResult {
     }
 
     _parseItems(xmlitems) {
+        console.log(`xmlitems : ${xmlitems.length}`);
+        
         xmlitems.each((index, value) => {
             this._stories.push(new Story(value));
         });

@@ -72,7 +72,7 @@ class MyUrl {
         };
                 
         if (this._isTestMode()) {
-            this.baseUrl = `http://localhost:8080/xml/search-result-${this.startAt}-${this.startAt + 500}.xml`;            
+            this.baseUrl = `http://localhost:8080/xml/search-result.xml`;            
         }
 
         return this.baseUrl + "?" + $.param(params) + "&" + this.preferredFields;

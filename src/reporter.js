@@ -89,7 +89,6 @@ class UserList {
     }
 }
 
-let url;
 let projects = new ProjectMap();
 let stories = [];
 let issues = {};
@@ -97,7 +96,7 @@ let issues = {};
 function main2() {
     generateHtml();
     
-    url = new MyUrl(GLOBAL_BASE_URL, GLOBAL_JQL, 1);
+    const url = new MyUrl(GLOBAL_BASE_URL, GLOBAL_JQL, 1);
     console.log("first fetch : " + url.searchUrl);
 
     $.get(url.searchUrl, 'xml').success(xmlDoc => {
@@ -109,17 +108,19 @@ function main2() {
     `));    
 }
 
-function fetchData(xmlDoc) {
-    const result = new SearchResult(xmlDoc);
-    const issues = result.issue();
+function fetchData(xmlDoc2) {
+    const result2 = new SearchResult(xmlDoc2);
+    const issues = result2.issue();
 
     const loop = Math.ceil((issues.total) / 500);
     console.log(`total: ${issues.total}, loop: ${loop}`);
 
     const deferred = _.range(0, loop).map(p => $.Deferred());
  
-    $.when.apply($, deferred).done(() => {
-            const docs = arguments;
+    $.when.apply($, deferred).done((...args) => {
+            const docs = args;
+            console.log("docs.length= " + docs.length);
+
             _(docs).map(d => new SearchResult(d)).map(result => {
                 projects.add(result);
                 stories = stories.concat(result.stories());
@@ -140,7 +141,7 @@ function fetchData(xmlDoc) {
         url2.setStartAt(issues.end * x);
             console.log("url: " + url2.searchUrl);
 
-            $.get(url2.searchUrl, 'xml').success(xmlDoc => {                        
+            $.get(url2.searchUrl, 'xml').success(xmlDoc => {
                 deferred[i].resolve(xmlDoc);
             })
             .error(err => {
