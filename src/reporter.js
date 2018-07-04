@@ -17,6 +17,7 @@ import { range, map } from 'lodash';
 import moment from 'moment';
 import { GoogleCharts } from 'google-charts';
 import ProjectMap from './project_map.js';
+import URI from 'urijs';
 
 GoogleCharts.load(() => {
     console.log("google chart loaded");
@@ -218,18 +219,20 @@ function showPieChart2(projectInfo, user, projectKey, statusMap) {
 
     function selectHandler() {
         var selectedItem = chart.getSelection()[0];
-        if (selectedItem) {
-        //   var value = data.getValue(selectedItem.row, selectedItem.column);
-        //   //alert('The user selected ' + value);
-        // "http://mlm.lge.com/di/secure/IssueNavigator.jspa?reset=true&jqlQuery=%28project+%3D+OSA+AND+issuetype+in+%28subTaskIssueTypes%28%29%2C+Bug%2C+Request%29+AND+%28component+in+%28SPRINT%2C+VERIZON%29+OR+labels+%3D+WBS%29%29+or+%28component+%3D+WBS+AND+project+%3D+THREERDP+AND+assignee+in+%28youngmi.lee%2C+junghyub.lee%2C+sungjae.jun%2C+junghyun.cho%2C+jaehee.jung%29%29+AND+created+%3E%3D+2018-01-01+AND+created+%3C%3D+2018-12-31+AND+assignee+not+in+%28unassigned%29"
-        // TO BE : (assignee = 'jaehee.jung' AND project = 'THREERDP') AND ((project = OSA AND issuetype in (subTaskIssueTypes(), Bug, Request) AND (component in (SPRINT, VERIZON) OR labels = WBS)) or (component = WBS AND project = THREERDP AND assignee in (youngmi.lee, junghyub.lee, sungjae.jun, junghyun.cho, jaehee.jung)) AND created >= 2018-01-01 AND created <= 2018-12-31 AND assignee not in (unassigned))
-            const replacement = encodeURIComponent(`assignee ='${user.username}' AND project ='${projectKey}'`);
-            const myLink = channelLink.replace('jqlQuery=', `jqlQuery=(${replacement})%20AND%20`);
+        if (selectedItem) {        
+            const replacement = `assignee ='${user.username}' AND project ='${projectKey}'`;
+
+            const parsedUri = URI.parse(_.unescape(channelLink));
+            const parsedQuery = URI.parseQuery(parsedUri.query);
+            parsedQuery.jqlQuery = `${replacement} AND (${parsedQuery.jqlQuery})`;
+            parsedUri.query = URI.buildQuery(parsedQuery);
             
-            console.log("channelLink: " + channelLink);
-            console.log("myLink: " + myLink);
-            
-            window.open(myLink, '_blank');
+            const newUri = URI.build(parsedUri);
+
+            console.log("channelLink: " + channelLink);            
+            console.log("newUri: " + newUri);
+
+            window.open(newUri, '_blank');
         }
     }
 
