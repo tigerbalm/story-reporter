@@ -12,22 +12,25 @@ div.round {
     box-shadow: 10px 10px grey;
 }
 
-a:link {
+a.mylink:link {
     color: green;
     background-color: transparent;
     text-decoration: none;
 }
-a:visited {
+
+a.mylink:visited {
     color: pink;
     background-color: transparent;
     text-decoration: none;
 }
-a:hover {
+
+a.mylink:hover {
     color: red;
     background-color: transparent;
     text-decoration: underline;
 }
-a:active {
+
+a.mylink:active {
     color: yellow;
     background-color: transparent;
     text-decoration: underline;

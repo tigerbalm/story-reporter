@@ -6,7 +6,8 @@
   "dependencies": {
     "google-charts": "^1.1.0",
     "lodash": "^4.17.10",
-    "moment": "^2.22.2"
+    "moment": "^2.22.2",
+    "urijs": "^1.19.1"
   },
   "devDependencies": {
     "babel-core": "^6.26.3",

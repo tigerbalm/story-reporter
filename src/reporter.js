@@ -13,25 +13,35 @@ import MomentUtil from './moment_util.js';
 import MyUrl from './url.js';
 import UserStat from './user_stat.js';
 import SearchResult from './search_result.js';
-import { range, map } from 'lodash';
+import {
+    range,
+    map
+} from 'lodash';
 import moment from 'moment';
-import { GoogleCharts } from 'google-charts';
+import {
+    GoogleCharts
+} from 'google-charts';
 import ProjectMap from './project_map.js';
 import URI from 'urijs';
 
-GoogleCharts.load(() => {
-    console.log("google chart loaded");
+AJS.toInit(function() {
+    //require("atlassian/analytics/user-activity-xhr-header").uninstall();
 
-    startProgress();
+    GoogleCharts.load(() => {
+        console.log("google chart loaded");
+    
+        startProgress();
+    
+        $.ajaxSetup({
+            xhrFields: {
+                withCredentials: true
+            }
+        });
+    
+        main2();
+    }, ['timeline', 'corechart']);    
+});
 
-    $.ajaxSetup({
-        xhrFields: {
-            withCredentials: true
-        }
-    });
-
-    main2();
-}, ['timeline', 'corechart']);
 
 let progressTimer;
 let timelineMap = new Map();
@@ -79,10 +89,10 @@ let channelLink;
 function fetchData(xmlDoc2) {
     const result2 = new SearchResult(xmlDoc2);
     const issues = result2.issue();
-    
+
     channelLink = result2.link();
 
-    $("#link_to_search_result").html(`<a href='${channelLink}' target='_blank'>MLM에서 전체 검색 결과 보기</a>`);
+    $("#link_to_search_result").html(`<a href='${channelLink}' target='_blank' class='mylink'>MLM에서 전체 검색 결과 보기</a>`);
 
     const loop = Math.ceil((issues.total) / 500);
     console.log(`total: ${issues.total}, loop: ${loop}`);
@@ -214,45 +224,35 @@ function showPieChart2(projectInfo, user, projectKey, statusMap) {
         // tooltip: {
         //     trigger: 'selection'
         // },
-        backgroundColor: { fill:'transparent' }
+        backgroundColor: {
+            fill: 'transparent'
+        }
     };
 
-    function selectHandler() {
-        var selectedItem = chart.getSelection()[0];
-        if (selectedItem) {        
-            const replacement = `assignee ='${user.username}' AND project ='${projectKey}'`;
-
-            const parsedUri = URI.parse(_.unescape(channelLink));
-            const parsedQuery = URI.parseQuery(parsedUri.query);
-            parsedQuery.jqlQuery = `${replacement} AND (${parsedQuery.jqlQuery})`;
-            parsedUri.query = URI.buildQuery(parsedQuery);
-            
-            const newUri = URI.build(parsedUri);
-
-            console.log("channelLink: " + channelLink);            
-            console.log("newUri: " + newUri);
-
-            window.open(newUri, '_blank');
+    google.visualization.events.addListener(chart, 'select', () => {
+        const item = chart.getSelection()[0];
+        if (typeof item === 'undefined') {
+            console.error("selectedItem is undefined");
+            return;
         }
-    }
+        
+        // item: {"row":1,"column":null}
+        // row 0 -> my jobs, row 1 -> others
 
-    google.visualization.events.addListener(chart, 'select', selectHandler);
+        const replacement = `assignee ${item.row == 0? '=' : '!='}'${user.username}' AND project ='${projectKey}'`;
 
-    const mlmKeys = _.chain(_.values(statusMap)).flatMap(s => s).map(s => s.key).join(",").value();
-    chart.setAction({
-        id: 'sample',
-        text: 'Show issues',
-        action: function () {
-            const selection = chart.getSelection();
-            switch (selection[0].row) {
-                case 0:
-                    window.open("http://mlm.lge.com/di/secure/IssueNavigator.jspa?reset=true?reset=true&jqlQuery=key in(" + mlmKeys + ")", '_blank');
-                    break;
-                case 1:
-                    //alert('Feynman Lectures on Physics'); 
-                    break;
-            }
-        }
+        const parsedUri = URI.parse(_.unescape(channelLink));
+        const parsedQuery = URI.parseQuery(parsedUri.query);
+        parsedQuery.jqlQuery = `${replacement} AND (${parsedQuery.jqlQuery})`;
+        parsedUri.query = URI.buildQuery(parsedQuery);
+
+        const newUri = URI.build(parsedUri);
+
+        console.log("channelLink: " + channelLink);
+        console.log("newUri: " + newUri);
+
+        window.open(newUri, '_blank');
+
     });
 
     chart.draw(data, options);
@@ -313,7 +313,9 @@ function showTimelineChart(id, user) {
             groupByRowLabel: false,
             colorByRowLabel: true
         },
-        backgroundColor: { fill:'transparent' }
+        backgroundColor: {
+            fill: 'transparent'
+        }
     };
 
     chart.draw(dataTable, options);
@@ -351,21 +353,7 @@ function toJobArray(storiesArr) {
         start = MomentUtil.min(start, end);
 
         return [`${story.status}`, story.summary, start.toDate(), end.toDate()];
-    }).value();
-}
-
-function onProjectClick(project) {
-    // refresh all with project
-    console.log(`Project "${project}" is selected.`);
-}
-
-function onComponentClick(comp) {
-    // refresh all with project
-    console.log(`Component "${comp}" is selected.`);
-}
-
-function onClickRefresh() {
-    console.log("onClickRefresh clicked");
+    }).sortBy([(s) => { return s[2].valueOf(); }, (s) => { return s[3].valueOf(); }]).value();
 }
 
 function generateHtml() {
@@ -375,12 +363,9 @@ function generateHtml() {
             <li>open : status is NOT in (resolved, closed) && start date is empty or < 다음주 마지막 일 && due date is (NOT empty and > 지난주 시작일)</li>
         </div>
         <div id='link_to_search_result'></div>
-        <div id='projects' hidden>projects div</div>
-        <div id='components' hidden>component div</div>
         <div id='center_progress_div'>
             <p id='processing_flash' style='font-size:large; padding: 270px 0; text-align: center; color:red; font-weight:bold;'>.</p>            
         </div>
-        <div id='issues'></div>
         <div id='people_div'>
             <table id='people_table' width=100%>
                 <tbody id='first'>
@@ -390,17 +375,4 @@ function generateHtml() {
         `;
 
     $("#myCanvas").html(html);
-}
-
-function addLinks(id, items, onClick) {
-    console.log("addLink items: " + items);
-
-    const html = items.map(item => `<span onclick='${onClick.name}("${item}")'>${item}</span>`).join(" | ");
-    $(`#${id}`).html(html);
-}
-
-function log(text) {
-    console.log(text);
-
-    //$('#log_message').html(text.replace('Error', '<span style="color:red; font-weight:bold;">Error</span>'));
 }
