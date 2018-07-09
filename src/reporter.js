@@ -24,6 +24,17 @@ import {
 import ProjectMap from './project_map.js';
 import URI from 'urijs';
 
+let AJS;
+if (typeof AJS === 'undefined') {
+    console.log("ajs undeinfed");
+
+    AJS = {
+        toInit(callback) {
+            callback();
+        }
+    };
+}
+
 AJS.toInit(function() {
     //require("atlassian/analytics/user-activity-xhr-header").uninstall();
 
@@ -41,7 +52,6 @@ AJS.toInit(function() {
         main2();
     }, ['timeline', 'corechart']);    
 });
-
 
 let progressTimer;
 let timelineMap = new Map();
@@ -192,18 +202,13 @@ function showPieChart2(projectInfo, user, projectKey, statusMap) {
     const others = projectInfo.total - myJobs;
     console.log(`${projectKey} - myJobs: ${myJobs}, others: ${others}`);
 
-    const tooltip = _.chain(_.values(statusMap)).flatMap(s => s).map(s => s.summary).join("\n").value();
-
     var data = new google.visualization.DataTable();
     data.addColumn('string', 'Who');
     data.addColumn('number', 'Jobs');
-    data.addColumn({
-        type: 'string',
-        role: 'tooltip'
-    });
+
     data.addRows([
-        ['My jobs', myJobs, ""],
-        ['Others', others, ""]
+        ['My jobs', myJobs],
+        ['Others', others]
     ]);
 
     var options = {
@@ -221,9 +226,6 @@ function showPieChart2(projectInfo, user, projectKey, statusMap) {
                 color: '#33cccc'
             }
         },
-        // tooltip: {
-        //     trigger: 'selection'
-        // },
         backgroundColor: {
             fill: 'transparent'
         }
@@ -252,7 +254,6 @@ function showPieChart2(projectInfo, user, projectKey, statusMap) {
         console.log("newUri: " + newUri);
 
         window.open(newUri, '_blank');
-
     });
 
     chart.draw(data, options);
@@ -284,8 +285,7 @@ function showTimelineChart(id, user) {
         dataTable.addColumn({
             type: 'string',
             id: 'Summary'
-        });
-        //dataTable.addColumn({ type: 'string', role: 'tooltip' });
+        });        
         dataTable.addColumn({
             type: 'date',
             id: 'Start'
@@ -323,6 +323,30 @@ function showTimelineChart(id, user) {
     timelineMap.set(id, {
         chart: chart,
         dataTable: dataTable
+    });
+
+    google.visualization.events.addListener(chart, 'select', () => {
+        const item = chart.getSelection()[0];
+        if (typeof item === 'undefined') {
+            console.error("selectedItem is undefined!");
+            return;
+        }
+
+        let job;
+        if (item.row < user.resolvedJobs.length) {
+            job = user.resolvedJobs[item.row];
+        } else {
+            job = user.openJobs[item.row - user.resolvedJobs.length];
+        }
+
+        if (typeof job === 'undefined') {
+            console.error(`can't find job - row : ${item.row}, resolved: ${user.resolvedJobs.length}, opened: ${user.openJobs.length}`)
+            return;
+        }
+
+        console.log("open: " + job.link);
+
+        window.open(job.link, '_blank');
     });
 }
 
