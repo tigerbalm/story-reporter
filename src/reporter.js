@@ -294,6 +294,10 @@ function showTimelineChart(id, user) {
             type: 'date',
             id: 'Due'
         });
+        dataTable.addColumn({
+            type: 'string',
+            id: 'link'
+        });
     }
 
     dataTable.addRows(toJobArray(user.resolvedJobs));
@@ -318,7 +322,10 @@ function showTimelineChart(id, user) {
         }
     };
 
-    chart.draw(dataTable, options);
+    var view = new google.visualization.DataView(dataTable);    
+    view.setColumns([0, 1, 2, 3]);
+
+    chart.draw(view, options);
 
     timelineMap.set(id, {
         chart: chart,
@@ -332,21 +339,10 @@ function showTimelineChart(id, user) {
             return;
         }
 
-        let job;
-        if (item.row < user.resolvedJobs.length) {
-            job = user.resolvedJobs[item.row];
-        } else {
-            job = user.openJobs[item.row - user.resolvedJobs.length];
-        }
+        const link = dataTable.getValue(item.row, 4);
+        console.log("link - " + link);
 
-        if (typeof job === 'undefined') {
-            console.error(`can't find job - row : ${item.row}, resolved: ${user.resolvedJobs.length}, opened: ${user.openJobs.length}`)
-            return;
-        }
-
-        console.log("open: " + job.link);
-
-        window.open(job.link, '_blank');
+        window.open(link, '_blank');
     });
 }
 
@@ -376,7 +372,7 @@ function toJobArray(storiesArr) {
 
         start = MomentUtil.min(start, end);
 
-        return [`${story.status}`, story.summary, start.toDate(), end.toDate()];
+        return [`${story.status}`, story.summary, start.toDate(), end.toDate(), story.link];
     }).sortBy([(s) => { return s[2].valueOf(); }, (s) => { return s[3].valueOf(); }]).value();
 }
 
