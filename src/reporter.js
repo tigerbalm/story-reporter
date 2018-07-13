@@ -58,7 +58,7 @@ let timelineMap = new Map();
 let pieChartMap = new Map();
 let projects = new ProjectMap();
 let stories = [];
-const BUCKET_SIZE = 500;
+const BUCKET_SIZE = 1000;
 
 function startProgress() {
     progressTimer = setInterval(() => {
@@ -87,6 +87,8 @@ function main2() {
     $.get(url.searchUrl, 'xml')
         .success(xmlDoc => fetchData(xmlDoc))
         .error(err => {
+            console.log("err: " + JSON.stringify(err));
+
             $("#people_div").html(`
                 <br>Error: ${err.statusText}(${err.status})
                 <br>ResponseText: ${err.responseText}
@@ -104,7 +106,7 @@ function fetchData(xmlDoc2) {
 
     $("#link_to_search_result").html(`<a href='${channelLink}' target='_blank' class='mylink'>MLM에서 전체 검색 결과 보기</a>`);
 
-    const loop = Math.ceil((issues.total) / 500);
+    const loop = Math.ceil((issues.total) / BUCKET_SIZE);
     console.log(`total: ${issues.total}, loop: ${loop}`);
 
     const deferred = _.range(0, loop).map(p => $.Deferred());
@@ -120,6 +122,7 @@ function fetchData(xmlDoc2) {
 
         updateGraph(stories);
     }).fail(err => {
+        console.log("err: " + JSON.stringify(err));
         $("#people_div").html(`
             <br>Error: ${err.statusText}(${err.status})
             <br>ResponseText: ${err.responseText}
@@ -137,6 +140,8 @@ function fetchData(xmlDoc2) {
             .success(xmlDoc => {
                 deferred[i].resolve(xmlDoc);
             }).error(err => {
+                console.log("err: " + JSON.stringify(err));
+
                 $("#people_div").html(`
                     <br>Error: ${err.statusText}(${err.status})
                     <br>ResponseText: ${err.responseText}
